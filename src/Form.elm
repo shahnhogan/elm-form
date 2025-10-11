@@ -470,7 +470,7 @@ dynamic :
             combineAndView
             parsed
             input
-dynamic forms (Internal.Form.Form _ parseFn _) =
+dynamic forms (Internal.Form.Form _ parseFn _ _) =
     Internal.Form.Form
         []
         (\maybeData formState ->
@@ -484,7 +484,7 @@ dynamic forms (Internal.Form.Form _ parseFn _) =
                         }
                 toParser decider =
                     case forms decider of
-                        Internal.Form.Form _ parseFn2 _ ->
+                        Internal.Form.Form _ parseFn2 _ _ ->
                             -- TODO need to include hidden form fields from `definitions` (should they be automatically rendered? Does that mean the view type needs to be hardcoded?)
                             parseFn2 maybeData formState
 
