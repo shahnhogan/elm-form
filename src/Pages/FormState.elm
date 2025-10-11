@@ -65,6 +65,15 @@ inputValueDecoder =
 
 
 {-| -}
+selectionDecoder : Decoder Internal.FieldEvent.SelectionState
+selectionDecoder =
+    Decode.map3 Internal.FieldEvent.SelectionState
+        (Decode.at [ "target", "selectionStart" ] (Decode.nullable Decode.int) |> Decode.map (Maybe.withDefault 0))
+        (Decode.at [ "target", "selectionEnd" ] (Decode.nullable Decode.int) |> Decode.map (Maybe.withDefault 0))
+        (Decode.at [ "target", "selectionDirection" ] (Decode.nullable Decode.string) |> Decode.map (Maybe.withDefault "none"))
+
+
+{-| -}
 fieldDecoder : Decoder Event
 fieldDecoder =
     Decode.field "type" Decode.string
@@ -72,7 +81,9 @@ fieldDecoder =
             (\type_ ->
                 case type_ of
                     "input" ->
-                        inputValueDecoder |> Decode.map InputEvent
+                        Decode.map2 InputEvent
+                            inputValueDecoder
+                            selectionDecoder
 
                     "focusin" ->
                         FocusEvent

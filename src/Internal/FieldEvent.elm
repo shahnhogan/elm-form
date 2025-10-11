@@ -1,4 +1,4 @@
-module Internal.FieldEvent exposing (Event(..), FieldEvent, FormData, Method(..), Msg(..), formDataOnSubmit)
+module Internal.FieldEvent exposing (Event(..), FieldEvent, FormData, Method(..), Msg(..), SelectionState, formDataOnSubmit)
 
 import Html
 import Html.Events
@@ -13,8 +13,15 @@ type alias FieldEvent =
     }
 
 
+type alias SelectionState =
+    { selectionStart : Int
+    , selectionEnd : Int
+    , selectionDirection : String
+    }
+
+
 type Event
-    = InputEvent String
+    = InputEvent String SelectionState
     | FocusEvent
       --| ChangeEvent
     | BlurEvent

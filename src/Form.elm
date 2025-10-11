@@ -307,6 +307,7 @@ initFormState : FormState
 initFormState =
     { fields = Dict.empty
     , submitAttempted = False
+    , formatters = Dict.empty
     }
 
 
@@ -348,6 +349,7 @@ form combineAndView =
             }
         )
         (\_ -> [])
+        Dict.empty
 
 
 {-| Allows you to render a Form that renders a sub-form based on the `decider` value.
@@ -482,7 +484,7 @@ dynamic forms formBuilder =
                         }
                 toParser decider =
                     case forms decider of
-                        Internal.Form.Form _ parseFn _ ->
+                        Internal.Form.Form _ parseFn _ _ ->
                             -- TODO need to include hidden form fields from `definitions` (should they be automatically rendered? Does that mean the view type needs to be hardcoded?)
                             parseFn maybeData formState
 
@@ -500,7 +502,7 @@ dynamic forms formBuilder =
                             }
                         newThing =
                             case formBuilder of
-                                Internal.Form.Form _ parseFn _ ->
+                                Internal.Form.Form _ parseFn _ _ ->
                                     parseFn maybeData formState
 
                         arg : { combine : decider -> Validation error parsed named constraints1, view : decider -> subView }
@@ -527,6 +529,7 @@ dynamic forms formBuilder =
             myFn
         )
         (\_ -> [])
+        Dict.empty
 
 
 
@@ -621,7 +624,17 @@ field :
     -> Field error parsed input initial kind constraints
     -> Form error (Form.Validation.Field error parsed kind -> combineAndView) parsedCombined input
     -> Form error combineAndView parsedCombined input
-field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitions parseFn toInitialValues) =
+field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitions parseFn toInitialValues formatters) =
+    let
+        updatedFormatters : Dict String (Internal.Field.EventInfo -> Maybe String)
+        updatedFormatters =
+            case fieldParser.formatOnEvent of
+                Just formatter ->
+                    Dict.insert name formatter formatters
+
+                Nothing ->
+                    formatters
+    in
     Internal.Form.Form
         (( name, Internal.Form.RegularField )
             :: definitions
@@ -688,6 +701,7 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
                 Nothing ->
                     toInitialValues input
         )
+        updatedFormatters
 
 
 {-| Declare a hidden field for the form.
@@ -719,7 +733,17 @@ hiddenField :
     -> Field error parsed input initial kind constraints
     -> Form error (Form.Validation.Field error parsed Form.FieldView.Hidden -> combineAndView) parsedCombined input
     -> Form error combineAndView parsedCombined input
-hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form definitions parseFn toInitialValues) =
+hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form definitions parseFn toInitialValues formatters) =
+    let
+        updatedFormatters : Dict String (Internal.Field.EventInfo -> Maybe String)
+        updatedFormatters =
+            case fieldParser.formatOnEvent of
+                Just formatter ->
+                    Dict.insert name formatter formatters
+
+                Nothing ->
+                    formatters
+    in
     Internal.Form.Form
         (( name, Internal.Form.HiddenField )
             :: definitions
@@ -785,6 +809,7 @@ hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form defini
                 Nothing ->
                     toInitialValues input
         )
+        updatedFormatters
 
 
 {-| Like [`hiddenField`](#hiddenField), but uses a hardcoded value. This is useful to ensure that your [`Form.Handler`](Form-Handler)
@@ -811,7 +836,7 @@ hiddenKind :
     -> error
     -> Form error combineAndView parsed input
     -> Form error combineAndView parsed input
-hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInitialValues) =
+hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInitialValues formatters) =
     let
         (Internal.Field.Field fieldParser _) =
             Field.exactValue value error_
@@ -860,6 +885,7 @@ hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInit
             ( name, Just value )
                 :: toInitialValues input
         )
+        formatters
 
 
 {-| The current validation errors for the given `Form`.
@@ -950,7 +976,7 @@ parse :
     -> input
     -> Form error { info | combine : Validation error parsed named constraints } parsed input
     -> Validated error parsed
-parse formId state input (Internal.Form.Form _ parser _) =
+parse formId state input (Internal.Form.Form _ parser _ _) =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
@@ -1118,7 +1144,7 @@ renderHelper :
             parsed
             input
     -> Html mappedMsg
-renderHelper formState options_ attrs ((Internal.Form.Form _ _ _) as form_) =
+renderHelper formState options_ attrs ((Internal.Form.Form _ _ _ _) as form_) =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
@@ -1195,7 +1221,7 @@ renderStyledHelper :
             parsed
             input
     -> Html.Styled.Html mappedMsg
-renderStyledHelper formState options_ attrs ((Internal.Form.Form _ _ _) as form_) =
+renderStyledHelper formState options_ attrs ((Internal.Form.Form _ _ _ _) as form_) =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
@@ -1275,7 +1301,7 @@ helperValues :
             parsed
             input
     -> { hiddenInputs : List view, children : List view, isValid : Bool, parsed : Maybe parsed, fields : List ( String, String ), errors : Dict String (List error) }
-helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitions parser toInitialValues) =
+helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitions parser toInitialValues formattersFromForm) =
     let
         initialValues : Dict String FieldState
         initialValues =
@@ -1304,6 +1330,7 @@ helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitio
                                         |> List.map (Tuple.mapSecond (\value -> { value = value, status = Form.Validation.NotVisited }))
                                         |> Dict.fromList
                                 , submitAttempted = True
+                                , formatters = Dict.empty
                                 }
                             )
                         |> Maybe.withDefault initFormState
@@ -1375,11 +1402,12 @@ helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitio
                                             )
                                         |> Dict.fromList
                                 , submitAttempted = True
+                                , formatters = Dict.empty
                                 }
                             )
                         |> Maybe.withDefault initSingle
                     )
-                |> (\state -> { state | fields = fullFormState })
+                |> (\state -> { state | fields = fullFormState, formatters = formattersFromForm })
 
         rawFields : List ( String, String )
         rawFields =
@@ -1451,6 +1479,7 @@ initSingle : FormState
 initSingle =
     { fields = Dict.empty
     , submitAttempted = False
+    , formatters = Dict.empty
     }
 
 
@@ -1644,6 +1673,11 @@ updateInternal fieldEvent pageFormState =
 {-| -}
 updateForm : FieldEvent -> FormState -> FormState
 updateForm fieldEvent formState =
+    let
+        maybeFormatter : Maybe (Internal.Field.EventInfo -> Maybe String)
+        maybeFormatter =
+            Dict.get fieldEvent.name formState.formatters
+    in
     { formState
         | fields =
             formState.fields
@@ -1654,11 +1688,30 @@ updateForm fieldEvent formState =
                             previousValue =
                                 previousValue_
                                     |> Maybe.withDefault { value = fieldEvent.value, status = Form.Validation.NotVisited }
+
+                            applyFormatter : String -> Event -> Internal.FieldEvent.SelectionState -> String
+                            applyFormatter value event selectionState =
+                                case maybeFormatter of
+                                    Nothing ->
+                                        value
+
+                                    Just formatter ->
+                                        let
+                                            eventInfo : Internal.Field.EventInfo
+                                            eventInfo =
+                                                eventToEventInfo value event selectionState
+                                        in
+                                        formatter eventInfo |> Maybe.withDefault value
                         in
                         (case fieldEvent.event of
-                            InputEvent newValue ->
+                            InputEvent newValue selectionState ->
+                                let
+                                    formattedValue : String
+                                    formattedValue =
+                                        applyFormatter newValue fieldEvent.event selectionState
+                                in
                                 { previousValue
-                                    | value = newValue
+                                    | value = formattedValue
                                     , status = previousValue.status |> increaseStatusTo Form.Validation.Changed
                                 }
 
@@ -1670,11 +1723,50 @@ updateForm fieldEvent formState =
                                 }
 
                             BlurEvent ->
-                                { previousValue | status = previousValue.status |> increaseStatusTo Form.Validation.Blurred }
+                                let
+                                    formattedValue : String
+                                    formattedValue =
+                                        applyFormatter previousValue.value fieldEvent.event { selectionStart = 0, selectionEnd = 0, selectionDirection = "none" }
+                                in
+                                { previousValue
+                                    | value = formattedValue
+                                    , status = previousValue.status |> increaseStatusTo Form.Validation.Blurred
+                                }
                         )
                             |> Just
                     )
     }
+
+
+{-| Convert Event to EventInfo for formatters
+-}
+eventToEventInfo : String -> Event -> Internal.FieldEvent.SelectionState -> Internal.Field.EventInfo
+eventToEventInfo value event selectionState =
+    case event of
+        InputEvent _ _ ->
+            let
+                selection : Internal.Field.Selection
+                selection =
+                    if selectionState.selectionStart == selectionState.selectionEnd then
+                        Internal.Field.Cursor
+                            { before = String.left selectionState.selectionStart value
+                            , after = String.dropLeft selectionState.selectionStart value
+                            }
+
+                    else
+                        Internal.Field.Range
+                            { before = String.left selectionState.selectionStart value
+                            , selected = String.slice selectionState.selectionStart selectionState.selectionEnd value
+                            , after = String.dropLeft selectionState.selectionEnd value
+                            }
+            in
+            Internal.Field.Input { value = value, selection = selection }
+
+        FocusEvent ->
+            Internal.Field.Focus { value = value }
+
+        BlurEvent ->
+            Internal.Field.Blur { value = value }
 
 
 setSubmitAttempted : String -> Model -> Model
@@ -2002,4 +2094,5 @@ type alias FieldState =
 type alias FormState =
     { fields : Dict String FieldState
     , submitAttempted : Bool
+    , formatters : Dict String (Internal.Field.EventInfo -> Maybe String)
     }

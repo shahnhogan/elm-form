@@ -10,6 +10,7 @@ module Form.Field exposing
     , range, withMin, withMax
     , withMinLength, withMaxLength
     , withStep
+    , EventInfo, Selection, formatOnEvent
     , No, Yes
     )
 
@@ -46,6 +47,11 @@ module Form.Field exposing
 ## Field Configuration
 
 @docs required, validateMap, map
+
+
+## Field Formatting
+
+@docs EventInfo, Selection, formatOnEvent
 
 
 ## Text Field Display Options
@@ -204,6 +210,25 @@ type alias Field error parsed input initial kind constraints =
     Internal.Field.Field error parsed input initial kind constraints
 
 
+{-| Information about a field event, including the value and selection state.
+
+This type is used with [`formatOnEvent`](#formatOnEvent) to access details about input, blur, and focus events.
+
+-}
+type alias EventInfo =
+    Internal.Field.EventInfo
+
+
+{-| Represents the current selection/cursor position in a text input.
+
+  - `Cursor` - A single cursor position (no text is selected). The `before` field contains text before the cursor, and `after` contains text after.
+  - `Range` - A text selection range. The `before`, `selected`, and `after` fields split the value into three parts.
+
+-}
+type alias Selection =
+    Internal.Field.Selection
+
+
 {-| Used in the constraints for a Field. These can't be built or used outside of the API, they are only used as guardrails
 to ensure sure that Fields are configured correctly.
 -}
@@ -267,6 +292,7 @@ required missingError (Internal.Field.Field field kind) =
         , properties =
             ( "required", Encode.bool True ) :: field.properties
         , compare = field.compare
+        , formatOnEvent = field.formatOnEvent
         }
         kind
 
@@ -323,6 +349,7 @@ text =
                 )
         , properties = []
         , compare = Basics.compare
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Text)
 
@@ -381,6 +408,7 @@ date toError =
                     (Ok value)
                     (Date.fromIsoString raw)
                     |> Result.withDefault LT
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Date)
 
@@ -458,6 +486,7 @@ time toError =
                                 Basics.compare value.hours parsedRaw.hours
                         )
                     |> Result.withDefault LT
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Time)
 
@@ -621,6 +650,7 @@ select optionsMapping invalidError =
             \_ _ ->
                 -- min/max properties aren't allowed for this field type
                 EQ
+        , formatOnEvent = Nothing
         }
         (Options fromString (optionsMapping |> List.map Tuple.first))
 
@@ -667,6 +697,7 @@ exactValue initialValue error =
             \_ _ ->
                 -- min/max properties aren't allowed for this field type
                 EQ
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Text)
 
@@ -709,6 +740,7 @@ checkbox =
             \_ _ ->
                 -- min/max properties aren't allowed for this field type
                 EQ
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Checkbox)
 
@@ -770,6 +802,7 @@ int toError =
 
                     _ ->
                         LT
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Number)
 
@@ -831,6 +864,7 @@ float toError =
 
                     _ ->
                         LT
+        , formatOnEvent = Nothing
         }
         (Internal.Input.Input Internal.Input.Number)
 
@@ -1123,6 +1157,7 @@ validateMap_ mapFn (Internal.Field.Field field kind) =
                        )
         , properties = field.properties
         , compare = field.compare
+        , formatOnEvent = field.formatOnEvent
         }
         kind
 
@@ -1176,6 +1211,7 @@ withMin min error (Internal.Field.Field field kind) =
                        )
         , properties = ( "min", Encode.string (field.initialToString min) ) :: field.properties
         , compare = field.compare
+        , formatOnEvent = field.formatOnEvent
         }
         kind
 
@@ -1205,6 +1241,7 @@ withMinLength minLength error (Internal.Field.Field field kind) =
                        )
         , properties = ( "minlength", Encode.string (String.fromInt minLength) ) :: field.properties
         , compare = field.compare
+        , formatOnEvent = field.formatOnEvent
         }
         kind
 
@@ -1234,6 +1271,7 @@ withMaxLength maxLength error (Internal.Field.Field field kind) =
                        )
         , properties = ( "maxlength", Encode.string (String.fromInt maxLength) ) :: field.properties
         , compare = field.compare
+        , formatOnEvent = field.formatOnEvent
         }
         kind
 
@@ -1291,6 +1329,7 @@ withMax max error (Internal.Field.Field field kind) =
                        )
         , properties = ( "max", Encode.string (field.initialToString max) ) :: field.properties
         , compare = field.compare
+        , formatOnEvent = field.formatOnEvent
         }
         kind
 
@@ -1363,4 +1402,80 @@ withOptionalInitialValue toInitialValue (Internal.Field.Field field kind) =
             | initialValue =
                 toInitialValue >> Maybe.map field.initialToString
         }
+        kind
+
+
+{-| Format a field's value based on the event type and cursor/selection state.
+
+This allows you to apply different formatting depending on whether the user is typing (Input), 
+leaving the field (Blur), or entering the field (Focus), and even considering where the cursor
+is positioned within the text.
+
+The formatter function receives [`EventInfo`](#EventInfo) and can return `Just newValue` to update the field,
+or `Nothing` to leave the value unchanged.
+
+Common use cases:
+
+  - Trim whitespace only on blur
+  - Format phone numbers as the user types, but only when cursor is at the end
+  - Apply uppercase transformation on input
+  - Different formatting for different events
+
+Example - trim whitespace only on blur:
+
+    Field.text
+        |> Field.formatOnEvent
+            (\event ->
+                case event of
+                    Blur { value } ->
+                        Just (String.trim value)
+
+                    _ ->
+                        Nothing
+            )
+        |> Field.required "Name is required"
+
+Example - format phone number only when cursor is at the end:
+
+    Field.text
+        |> Field.formatOnEvent
+            (\event ->
+                case event of
+                    Input { value, selection } ->
+                        case selection of
+                            Cursor { after } ->
+                                if after == "" then
+                                    Just (formatPhoneNumber value)
+                                else
+                                    Nothing
+
+                            _ ->
+                                Nothing
+
+                    _ ->
+                        Nothing
+            )
+        |> Field.required "Phone is required"
+
+Example - different formatting for different events:
+
+    Field.text
+        |> Field.formatOnEvent
+            (\event ->
+                case event of
+                    Input { value } ->
+                        Just (String.toUpper value)  -- live uppercase
+
+                    Blur { value } ->
+                        Just (String.trim value)     -- trim on blur
+
+                    _ ->
+                        Nothing
+            )
+
+-}
+formatOnEvent : (EventInfo -> Maybe String) -> Field error parsed input initial kind constraints -> Field error parsed input initial kind constraints
+formatOnEvent formatter (Internal.Field.Field field kind) =
+    Internal.Field.Field
+        { field | formatOnEvent = Just formatter }
         kind
