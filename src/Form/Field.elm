@@ -10,7 +10,7 @@ module Form.Field exposing
     , range, withMin, withMax
     , withMinLength, withMaxLength
     , withStep
-    , EventInfo, Selection, formatOnEvent
+    , EventInfo(..), Selection(..), formatOnEvent
     , No, Yes
     )
 
@@ -215,8 +215,10 @@ type alias Field error parsed input initial kind constraints =
 This type is used with [`formatOnEvent`](#formatOnEvent) to access details about input, blur, and focus events.
 
 -}
-type alias EventInfo =
-    Internal.Field.EventInfo
+type EventInfo
+    = Input { value : String, selection : Selection }
+    | Blur { value : String }
+    | Focus { value : String }
 
 
 {-| Represents the current selection/cursor position in a text input.
@@ -225,8 +227,9 @@ type alias EventInfo =
   - `Range` - A text selection range. The `before`, `selected`, and `after` fields split the value into three parts.
 
 -}
-type alias Selection =
-    Internal.Field.Selection
+type Selection
+    = Cursor { before : String, after : String }
+    | Range { before : String, selected : String, after : String }
 
 
 {-| Used in the constraints for a Field. These can't be built or used outside of the API, they are only used as guardrails
@@ -1476,6 +1479,34 @@ Example - different formatting for different events:
 -}
 formatOnEvent : (EventInfo -> Maybe String) -> Field error parsed input initial kind constraints -> Field error parsed input initial kind constraints
 formatOnEvent formatter (Internal.Field.Field field kind) =
+    let
+        internalFormatter : Internal.Field.EventInfo -> Maybe String
+        internalFormatter internalEvent =
+            formatter (eventInfoFromInternal internalEvent)
+    in
     Internal.Field.Field
-        { field | formatOnEvent = Just formatter }
+        { field | formatOnEvent = Just internalFormatter }
         kind
+
+
+eventInfoFromInternal : Internal.Field.EventInfo -> EventInfo
+eventInfoFromInternal internalEvent =
+    case internalEvent of
+        Internal.Field.Input { value, selection } ->
+            Input { value = value, selection = selectionFromInternal selection }
+
+        Internal.Field.Blur { value } ->
+            Blur { value = value }
+
+        Internal.Field.Focus { value } ->
+            Focus { value = value }
+
+
+selectionFromInternal : Internal.Field.Selection -> Selection
+selectionFromInternal internalSelection =
+    case internalSelection of
+        Internal.Field.Cursor { before, after } ->
+            Cursor { before = before, after = after }
+
+        Internal.Field.Range { before, selected, after } ->
+            Range { before = before, selected = selected, after = after }
