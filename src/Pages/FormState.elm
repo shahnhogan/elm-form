@@ -23,9 +23,6 @@ listeners formId formState onEventFn =
 {-| -}
 fieldEventDecoder : FormState -> (FormState -> String -> Internal.Field.EventInfo -> Maybe String) -> Decoder FieldEvent
 fieldEventDecoder formState onEventFn =
-    let
-        _ = Debug.log "fieldEventDecoder CALLED" "Event received"
-    in
     Decode.map4
         (\value formId name selection ->
             { value = value
@@ -67,12 +64,7 @@ fieldEventDecoder formState onEventFn =
 
                                 newValue : Maybe String
                                 newValue =
-                                    let
-                                        _ = Debug.log "Calling onEventFn with" { fieldName = partial.name, eventInfo = eventInfo }
-                                        result = onEventFn formState partial.name eventInfo
-                                        _ = Debug.log "onEventFn result" result
-                                    in
-                                    result
+                                    onEventFn formState partial.name eventInfo
                             in
                             { value =
                                 case newValue of
