@@ -357,6 +357,11 @@ form combineAndView =
 For example, here is a `Form` that shows a dropdown to select between a `Post` and a `Link`, and then
 renders the `linkForm` or `postForm` based on the dropdown selection.
 
+**Note:** Dynamic forms now support `formatOnEvent` in sub-form fields! You need to provide
+a `deciderFieldName` (the name of the field that determines which sub-form to show) and a
+`deciderFromString` function that can parse the string field value back to your decider type.
+This allows the form to properly route events to the correct sub-form.
+
     import Form.Handler
     import Form.Validation as Validation
     import Form.Field as Field
@@ -389,11 +394,27 @@ renders the `linkForm` or `postForm` based on the dropdown selection.
                     |> Field.required "Required"
                 )
             |> Form.dynamic
-                (\parsedKind ->
-                    case parsedKind of
-                        Link -> linkForm
-                        Post -> postForm
-                )
+                { forms =
+                    \parsedKind ->
+                        case parsedKind of
+                            Link -> linkForm
+                            Post -> postForm
+                , deciderFieldName = "kind"
+                , deciderFromString = postKindFromString  -- Helper function!
+                }
+
+    -- Enumeration helpers (you can generate these automatically):
+
+    postKindFromString : String -> Maybe PostKind
+    postKindFromString str =
+        case str of
+            "link" -> Just Link
+            "post" -> Just Post
+            _ -> Nothing
+
+    postKindOptions : List ( String, PostKind )
+    postKindOptions =
+        [ ( "link", Link ), ( "post", Post ) ]
 
     linkForm : Form.HtmlForm String PostAction input msg
     linkForm =
@@ -443,16 +464,19 @@ renders the `linkForm` or `postForm` based on the dropdown selection.
 
 -}
 dynamic :
-    (decider
-     ->
-        Form
-            error
-            { combine : Validation error parsed named constraints1
-            , view : subView
-            }
-            parsed
-            input
-    )
+    { forms :
+        decider
+        ->
+            Form
+                error
+                { combine : Validation error parsed named constraints1
+                , view : subView
+                }
+                parsed
+                input
+    , deciderFieldName : String
+    , deciderFromString : String -> Maybe decider
+    }
     ->
         Form
             error
@@ -470,15 +494,7 @@ dynamic :
             combineAndView
             parsed
             input
-dynamic forms (Internal.Form.Form _ parseFn _ _) =
-    let
-        -- Build a mapping of field names to event handlers by examining all possible sub-forms
-        -- We'll do this by calling the forms function with dummy decider values and extracting their field definitions
-        buildEventHandlerMapping () =
-            -- TODO: We need a way to enumerate possible decider values
-            -- For now, we'll return an empty mapping and implement this step by step
-            Dict.empty
-    in
+dynamic { forms, deciderFieldName, deciderFromString } (Internal.Form.Form _ parseFn _ _) =
     Internal.Form.Form
         []
         (\maybeData formState ->
@@ -558,104 +574,26 @@ dynamic forms (Internal.Form.Form _ parseFn _ _) =
             myFn
         )
         (\_ -> [])
-        (\formState fieldName eventInfo ->
-            let
-                _ = Debug.log "DYNAMIC: Event handler called" { fieldName = fieldName, eventInfo = eventInfo }
-                _ = Debug.log "DYNAMIC: Form state fields" (Dict.keys formState.fields)
-                
-                -- INSIGHT: The real issue is that we need to route events to sub-forms
-                -- But we can't easily reconstruct the decider values from within Form.elm
-                -- 
-                -- However, looking at the debug output, we can see:
-                -- 1. The event is for field "body" 
-                -- 2. The form state has fields: ["body","kind","testField","title"]
-                -- 3. "body" field only exists in postForm, not linkForm
-                -- 4. So we need to route this event to the postForm
-                --
-                -- The fundamental challenge is that dynamic forms need a way to route events
-                -- to sub-forms based on the current state, but the current architecture
-                -- doesn't provide an easy way to do this.
-                --
-                -- For now, let's implement a basic solution and improve it iteratively
-                
-                -- Get the kind field to determine which decider to use
-                kindFieldValue = Dict.get "kind" formState.fields |> Maybe.map .value
-                
-                _ = Debug.log "DYNAMIC: Kind field value" kindFieldValue
-                
-                -- Try to determine which sub-form fields belong to based on field name
-                possiblePostFields = ["title", "body"]  -- These are fields in postForm
-                possibleLinkFields = ["url"]  -- This is field in linkForm
-                
-                routingResult = 
-                    if List.member fieldName possiblePostFields then
-                        let
-                            _ = Debug.log "DYNAMIC: Field belongs to postForm, need to route to Post decider" fieldName
-                            
-                            -- WORKING APPROACH: We have confirmed the field routing works
-                            -- Now we need to actually get the decider value and call the sub-form
-                            -- 
-                            -- Key insight: We need to avoid fighting the type system
-                            -- Instead, let's implement a simple hardcoded solution for this specific case
-                            -- and generalize it later
-                            
-                            -- For the DynamicFormOnChange example:
-                            -- - If kind field = "post", we want the Post decider
-                            -- - If kind field = "link", we want the Link decider
-                            -- - The body field belongs to the Post form
-                            
-                            -- Let's check the kind field value and handle accordingly
-                            actualResult = case kindFieldValue of
-                                Just "post" ->
-                                    let
-                                        _ = Debug.log "DYNAMIC: Kind is 'post', body field should be handled by Post form" ()
-                                        -- For now, simulate what the formatOnEvent should do
-                                        -- Based on the postForm definition, body field should be trimmed on blur/input
-                                    in
-                                    case eventInfo of
-                                        Internal.Field.Blur value ->
-                                            let
-                                                trimmed = String.trim value
-                                                _ = Debug.log "DYNAMIC: Trimming body on blur" { original = value, trimmed = trimmed }
-                                            in
-                                            Just trimmed
-                                        Internal.Field.Input selection ->
-                                            let
-                                                value = Selection.value selection
-                                                trimmed = String.trim value
-                                                _ = Debug.log "DYNAMIC: Trimming body on input" { original = value, trimmed = trimmed }
-                                            in
-                                            Just trimmed
-                                        _ ->
-                                            Nothing
-                                
-                                Just "link" ->
-                                    let
-                                        _ = Debug.log "DYNAMIC: Kind is 'link', but body field shouldn't exist in link form" ()
-                                    in
-                                    Nothing
-                                
-                                _ ->
-                                    let
-                                        _ = Debug.log "DYNAMIC: No kind value or unknown kind, cannot handle event" kindFieldValue
-                                    in
-                                    Nothing
-                            
-                            _ = Debug.log "DYNAMIC: Hardcoded event handling result" actualResult
-                        in
-                        actualResult
-                    else if List.member fieldName possibleLinkFields then
-                        let
-                            _ = Debug.log "DYNAMIC: Field belongs to linkForm, need to route to Link decider" fieldName
-                        in
-                        Nothing
-                    else
-                        let
-                            _ = Debug.log "DYNAMIC: Unknown field, cannot route" fieldName
-                        in
-                        Nothing
-            in
-            routingResult
+        (\pagesFormState fieldName eventInfo ->
+            -- Now we can properly route events to sub-forms!
+            -- First, get the current decider value from the form state
+            case pagesFormState.fields |> Dict.get deciderFieldName of
+                Just deciderField ->
+                    -- Parse the string decider value back to the decider type
+                    case deciderFromString deciderField.value of
+                        Just decider ->
+                            -- We have the decider! Route to the appropriate sub-form
+                            case forms decider of
+                                Internal.Form.Form _ _ _ subFormEventHandler ->
+                                    subFormEventHandler pagesFormState fieldName eventInfo
+
+                        Nothing ->
+                            -- Couldn't parse the decider, can't route
+                            Nothing
+
+                Nothing ->
+                    -- No decider field value, can't route
+                    Nothing
         )
 
 
@@ -819,29 +757,15 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
                     toInitialValues input
         )
         (\formState fieldName eventInfo ->
-            let
-                _ = Debug.log "Field event handler called" { targetField = name, eventField = fieldName, hasFormatter = fieldParser.formatOnEvent /= Nothing }
-            in
             if fieldName == name then
                 case fieldParser.formatOnEvent of
                     Just formatter ->
-                        let
-                            _ = Debug.log "Calling formatOnEvent for field" name
-                            result = formatter eventInfo
-                            _ = Debug.log "formatOnEvent result" result
-                        in
-                        result
+                        formatter eventInfo
 
                     Nothing ->
-                        let
-                            _ = Debug.log "No formatOnEvent for field" name
-                        in
                         Nothing
 
             else
-                let
-                    _ = Debug.log "Event for different field, delegating" { targetField = name, eventField = fieldName }
-                in
                 onEventPrevious formState fieldName eventInfo
         )
 
