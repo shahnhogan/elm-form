@@ -7,7 +7,7 @@ module Form.Field exposing
     , exactValue
     , required, validateMap, map
     , formatOnEvent, EventInfo(..)
-    , email, password, search, telephone, url, textarea
+    , email, numeric, password, search, telephone, url, textarea
     , range, withMin, withMax
     , withMinLength, withMaxLength
     , withStep
@@ -53,7 +53,7 @@ module Form.Field exposing
 
 ## Text Field Display Options
 
-@docs email, password, search, telephone, url, textarea
+@docs email, numeric, password, search, telephone, url, textarea
 
 
 ## Numeric Field Options
@@ -943,6 +943,24 @@ telephone :
 telephone (Internal.Field.Field field _) =
     Internal.Field.Field field
         (Internal.Input.Input Internal.Input.Tel)
+
+
+{-| Modifier for [`text`](#text) Field. This changes the display of the Field to a numeric input (`<input type="numeric">`).
+On mobile devices, this will display a keyboard with a numeric keypad. Devices may or may not show a minus key.
+
+See <https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inputmode#numeric>.
+
+    example =
+        Field.text
+            |> Field.numeric
+
+-}
+numeric :
+    Field error parsed input initial Input { constraints | plainText : () }
+    -> Field error parsed input initial Input constraints
+numeric (Internal.Field.Field field _) =
+    Internal.Field.Field field
+        (Internal.Input.Input Internal.Input.Numeric)
 
 
 {-| Modifier for [`text`](#text) Field. This changes the display of the Field to a search input (`<input type="search">`).
