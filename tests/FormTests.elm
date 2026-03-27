@@ -850,6 +850,347 @@ all =
                                 )
                 ]
             ]
+        , describe "formatOnEvent"
+            [ test "field with formatOnEvent parses correctly" <|
+                \() ->
+                    let
+                        uppercaseOnBlur : Field.EventInfo -> Maybe String
+                        uppercaseOnBlur event =
+                            case event of
+                                Field.Blur val ->
+                                    Just (String.toUpper val)
+
+                                _ ->
+                                    Nothing
+
+                        formWithFormat : DoneForm String String input MyView
+                        formWithFormat =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent uppercaseOnBlur
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "name", "hello" ) ]
+                        )
+                        (formWithFormat |> Form.Handler.init identity)
+                        |> Expect.equal (Valid "hello")
+            , test "multiple fields with formatOnEvent parse correctly" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithMultipleFormatters : DoneForm String ( String, String ) input MyView
+                        formWithMultipleFormatters =
+                            Form.form
+                                (\first last ->
+                                    { combine =
+                                        Validation.succeed Tuple.pair
+                                            |> Validation.andMap first
+                                            |> Validation.andMap last
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "first"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.field "last"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "first", "Jane" )
+                            , ( "last", "Doe" )
+                            ]
+                        )
+                        (formWithMultipleFormatters |> Form.Handler.init identity)
+                        |> Expect.equal (Valid ( "Jane", "Doe" ))
+            , test "field with formatOnEvent still produces validation errors" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithFormat : DoneForm String String input MyView
+                        formWithFormat =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields [])
+                        (formWithFormat |> Form.Handler.init identity)
+                        |> Expect.equal
+                            (Invalid Nothing
+                                (Dict.fromList [ ( "name", [ "Required" ] ) ])
+                            )
+            , test "dynamic sub-form with formatOnEvent parses correctly" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        linkFormWithFormat : DoneForm String PostAction input MyView
+                        linkFormWithFormat =
+                            Form.form
+                                (\url ->
+                                    { combine =
+                                        Validation.succeed ParsedLink
+                                            |> Validation.andMap url
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "url"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.url
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+
+                        postFormWithFormat : DoneForm String PostAction input MyView
+                        postFormWithFormat =
+                            Form.form
+                                (\title body ->
+                                    { combine =
+                                        Validation.succeed
+                                            (\titleValue bodyValue ->
+                                                { title = titleValue
+                                                , body = bodyValue
+                                                }
+                                            )
+                                            |> Validation.andMap title
+                                            |> Validation.andMap body
+                                            |> Validation.map ParsedPost
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "title"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.field "body" Field.text
+
+                        dynamicFormWithFormat : DoneForm String PostAction input MyView
+                        dynamicFormWithFormat =
+                            Form.form
+                                (\kind postForm_ ->
+                                    { combine =
+                                        kind
+                                            |> Validation.andThen postForm_.combine
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "kind"
+                                    (Field.select
+                                        [ ( "link", Link )
+                                        , ( "post", Post )
+                                        ]
+                                        (\_ -> "Invalid")
+                                        |> Field.required "Required"
+                                    )
+                                |> Form.dynamic
+                                    (\parsedKind ->
+                                        case parsedKind of
+                                            Link ->
+                                                linkFormWithFormat
+
+                                            Post ->
+                                                postFormWithFormat
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "kind", "link" )
+                            , ( "url", "https://elm-radio.com" )
+                            ]
+                        )
+                        (dynamicFormWithFormat |> Form.Handler.init identity)
+                        |> Expect.equal (Valid (ParsedLink "https://elm-radio.com"))
+            , test "dynamic sub-form with formatOnEvent includes errors" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        linkFormWithFormat : DoneForm String PostAction input MyView
+                        linkFormWithFormat =
+                            Form.form
+                                (\url ->
+                                    { combine =
+                                        Validation.succeed ParsedLink
+                                            |> Validation.andMap url
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "url"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.url
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+
+                        dynamicFormWithFormat : DoneForm String PostAction input MyView
+                        dynamicFormWithFormat =
+                            Form.form
+                                (\kind postForm_ ->
+                                    { combine =
+                                        kind
+                                            |> Validation.andThen postForm_.combine
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "kind"
+                                    (Field.select
+                                        [ ( "link", Link )
+                                        , ( "post", Post )
+                                        ]
+                                        (\_ -> "Invalid")
+                                        |> Field.required "Required"
+                                    )
+                                |> Form.dynamic
+                                    (\parsedKind ->
+                                        case parsedKind of
+                                            Link ->
+                                                linkFormWithFormat
+
+                                            Post ->
+                                                linkFormWithFormat
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "kind", "link" ) ]
+                        )
+                        (dynamicFormWithFormat |> Form.Handler.init identity)
+                        |> Expect.equal
+                            (Invalid Nothing
+                                (Dict.fromList [ ( "url", [ "Required" ] ) ])
+                            )
+            , test "dynamic sub-form switching with formatOnEvent parses both branches" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        linkFormWithFormat : DoneForm String PostAction input MyView
+                        linkFormWithFormat =
+                            Form.form
+                                (\url ->
+                                    { combine =
+                                        Validation.succeed ParsedLink
+                                            |> Validation.andMap url
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "url"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.url
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+
+                        postFormWithFormat : DoneForm String PostAction input MyView
+                        postFormWithFormat =
+                            Form.form
+                                (\title body ->
+                                    { combine =
+                                        Validation.succeed
+                                            (\titleValue bodyValue ->
+                                                { title = titleValue
+                                                , body = bodyValue
+                                                }
+                                            )
+                                            |> Validation.andMap title
+                                            |> Validation.andMap body
+                                            |> Validation.map ParsedPost
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "title"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.field "body" Field.text
+
+                        dynamicFormWithFormat : DoneForm String PostAction input MyView
+                        dynamicFormWithFormat =
+                            Form.form
+                                (\kind postForm_ ->
+                                    { combine =
+                                        kind
+                                            |> Validation.andThen postForm_.combine
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "kind"
+                                    (Field.select
+                                        [ ( "link", Link )
+                                        , ( "post", Post )
+                                        ]
+                                        (\_ -> "Invalid")
+                                        |> Field.required "Required"
+                                    )
+                                |> Form.dynamic
+                                    (\parsedKind ->
+                                        case parsedKind of
+                                            Link ->
+                                                linkFormWithFormat
+
+                                            Post ->
+                                                postFormWithFormat
+                                    )
+                    in
+                    -- Test the post branch parses too
+                    Form.Handler.run
+                        (fields
+                            [ ( "kind", "post" )
+                            , ( "title", "My Post" )
+                            , ( "body", "Content here" )
+                            ]
+                        )
+                        (dynamicFormWithFormat |> Form.Handler.init identity)
+                        |> Expect.equal
+                            (Valid
+                                (ParsedPost
+                                    { title = "My Post"
+                                    , body = Just "Content here"
+                                    }
+                                )
+                            )
+            ]
         ]
 
 
