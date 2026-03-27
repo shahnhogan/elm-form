@@ -12,7 +12,7 @@ module Form exposing
     , parse
     , Validated(..)
     , hiddenField, hiddenKind
-    , dynamic
+    , dynamic, dynamicWithOptions
     , Msg, init, update
     , Model, FormState, FieldState
     , ServerResponse
@@ -213,7 +213,7 @@ through hidden fields.
 
 ## Dynamic Fields
 
-@docs dynamic
+@docs dynamic, dynamicWithOptions
 
 
 ## Wiring
@@ -397,13 +397,11 @@ renders the `linkForm` or `postForm` based on the dropdown selection.
                     |> Field.required "Required"
                 )
             |> Form.dynamic
-                { forms =
-                    \parsedKind ->
-                        case parsedKind of
-                            Link -> linkForm
-                            Post -> postForm
-                , options = [ Link, Post ]
-                }
+                (\parsedKind ->
+                    case parsedKind of
+                        Link -> linkForm
+                        Post -> postForm
+                )
 
     linkForm : Form.HtmlForm String PostAction input msg
     linkForm =
@@ -453,6 +451,54 @@ renders the `linkForm` or `postForm` based on the dropdown selection.
 
 -}
 dynamic :
+    (decider
+     ->
+        Form
+            error
+            { combine : Validation error parsed named constraints1
+            , view : subView
+            }
+            parsed
+            input
+    )
+    ->
+        Form
+            error
+            ({ combine : decider -> Validation error parsed named constraints1
+             , view : decider -> subView
+             }
+             -> combineAndView
+            )
+            parsed
+            input
+    ->
+        Form
+            error
+            combineAndView
+            parsed
+            input
+dynamic forms =
+    dynamicWithOptions { forms = forms, options = [] }
+
+
+{-| Like [`dynamic`](#dynamic), but also collects `formatOnEvent` handlers from sub-forms.
+
+If your sub-form fields use [`Field.formatOnEvent`](Form-Field#formatOnEvent), you need to provide the
+list of all possible decider values so that their event handlers can be registered.
+
+    |> Form.dynamicWithOptions
+        { forms =
+            \parsedKind ->
+                case parsedKind of
+                    Link -> linkForm
+                    Post -> postForm
+        , options = [ Link, Post ]
+        }
+
+If none of your sub-form fields use `formatOnEvent`, use [`dynamic`](#dynamic) instead.
+
+-}
+dynamicWithOptions :
     { forms :
         decider
         ->
@@ -481,7 +527,7 @@ dynamic :
             combineAndView
             parsed
             input
-dynamic { forms, options } (Internal.Form.Form _ parseFn _ parentEventHandlers) =
+dynamicWithOptions { forms, options } (Internal.Form.Form _ parseFn _ parentEventHandlers) =
     let
         allSubFormEventHandlers : Dict String (Internal.Field.EventInfo -> Maybe String)
         allSubFormEventHandlers =

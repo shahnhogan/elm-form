@@ -275,30 +275,28 @@ all =
                                 |> Form.hiddenField "_subform"
                                     (Field.exactValue "default" "Invalid")
                                 |> Form.dynamic
-                                    { forms =
-                                        \() ->
-                                            Form.form
-                                                (\password passwordConfirmation ->
-                                                    { combine =
-                                                        Validation.succeed
-                                                            (\passwordValue passwordConfirmationValue ->
-                                                                if passwordValue == passwordConfirmationValue then
-                                                                    Validation.succeed { password = passwordValue }
+                                    (\() ->
+                                        Form.form
+                                            (\password passwordConfirmation ->
+                                                { combine =
+                                                    Validation.succeed
+                                                        (\passwordValue passwordConfirmationValue ->
+                                                            if passwordValue == passwordConfirmationValue then
+                                                                Validation.succeed { password = passwordValue }
 
-                                                                else
-                                                                    passwordConfirmation
-                                                                        |> Validation.fail "Must match password"
-                                                            )
-                                                            |> Validation.andMap password
-                                                            |> Validation.andMap passwordConfirmation
-                                                            |> Validation.andThen identity
-                                                    , view = [ Div ]
-                                                    }
-                                                )
-                                                |> Form.field "password" (Field.text |> Field.password |> Field.required "Required")
-                                                |> Form.field "password-confirmation" (Field.text |> Field.password |> Field.required "Required")
-                                    , options = [ () ]
-                                    }
+                                                            else
+                                                                passwordConfirmation
+                                                                    |> Validation.fail "Must match password"
+                                                        )
+                                                        |> Validation.andMap password
+                                                        |> Validation.andMap passwordConfirmation
+                                                        |> Validation.andThen identity
+                                                , view = [ Div ]
+                                                }
+                                            )
+                                            |> Form.field "password" (Field.text |> Field.password |> Field.required "Required")
+                                            |> Form.field "password-confirmation" (Field.text |> Field.password |> Field.required "Required")
+                                    )
                                 |> Form.Handler.init identity
                             )
                             |> Expect.equal
@@ -368,16 +366,14 @@ all =
                                 |> Field.required "Required"
                             )
                         |> Form.dynamic
-                            { forms =
-                                \parsedKind ->
-                                    case parsedKind of
-                                        Link ->
-                                            linkForm
+                            (\parsedKind ->
+                                case parsedKind of
+                                    Link ->
+                                        linkForm
 
-                                        Post ->
-                                            postForm
-                            , options = [ Link, Post ]
-                            }
+                                    Post ->
+                                        postForm
+                            )
             in
             [ test "parses link" <|
                 \() ->
@@ -565,16 +561,14 @@ all =
                                 |> Field.required "Form type is required"
                             )
                         |> Form.dynamic
-                            { forms =
-                                \parsedType ->
-                                    case parsedType of
-                                        UserForm ->
-                                            userForm
+                            (\parsedType ->
+                                case parsedType of
+                                    UserForm ->
+                                        userForm
 
-                                        AdminForm ->
-                                            adminForm
-                            , options = [ UserForm, AdminForm ]
-                            }
+                                    AdminForm ->
+                                        adminForm
+                            )
             in
             [ describe "Initial form errors AND follow-up form errors in final result" <|
                 [ test "User form with errors in both initial and follow-up forms" <|
@@ -659,16 +653,14 @@ all =
                                     |> Field.required "Form type is required"
                                 )
                             |> Form.dynamic
-                                { forms =
-                                    \parsedType ->
-                                        case parsedType of
-                                            EmployeeForm ->
-                                                employeeForm
+                                (\parsedType ->
+                                    case parsedType of
+                                        EmployeeForm ->
+                                            employeeForm
 
-                                            ContractorForm ->
-                                                contractorForm
-                                , options = [ EmployeeForm, ContractorForm ]
-                                }
+                                        ContractorForm ->
+                                            contractorForm
+                                )
                 in
                 [ test "Employee form with validation errors only in follow-up form" <|
                     \() ->
@@ -768,16 +760,14 @@ all =
                                     |> Field.required "Form type is required"
                                 )
                             |> Form.dynamic
-                                { forms =
-                                    \parsedType ->
-                                        case parsedType of
-                                            EmployeeForm2 ->
-                                                employeeForm
+                                (\parsedType ->
+                                    case parsedType of
+                                        EmployeeForm2 ->
+                                            employeeForm
 
-                                            ContractorForm2 ->
-                                                contractorForm
-                                , options = [ EmployeeForm2, ContractorForm2 ]
-                                }
+                                        ContractorForm2 ->
+                                            contractorForm
+                                )
                 in
                 [ test "Employee form with all error types" <|
                     \() ->
