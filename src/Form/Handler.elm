@@ -187,7 +187,7 @@ normalizeServerForm :
     (parsed -> combined)
     -> Form error { combineAndView | combine : Validation error parsed kind constraints } parsed input
     -> Form error (Validation error combined Never Never) Never Never
-normalizeServerForm mapFn (Internal.Form.Form _ parseFn _ _) =
+normalizeServerForm mapFn (Internal.Form.Form _ parseFn _) =
     Internal.Form.Form
         []
         (\_ formState ->
@@ -206,7 +206,6 @@ normalizeServerForm mapFn (Internal.Form.Form _ parseFn _ _) =
             }
         )
         (\_ -> [])
-        Dict.empty
 
 
 {-| Parse your [`Handler`](#Handler) with the given raw form data into a [`Validated`](Form#Validated) value.
@@ -276,7 +275,7 @@ runServerSide :
     List ( String, String )
     -> Form error (Validation error parsed kind constraints) Never input
     -> ( Bool, ( Maybe parsed, Dict String (List error) ) )
-runServerSide rawFormData (Internal.Form.Form _ parser _ _) =
+runServerSide rawFormData (Internal.Form.Form _ parser _) =
     let
         parsed :
             { result : Dict String (List error)
@@ -315,7 +314,7 @@ mergeResults :
     -> Validation error parsed unnamed constraints2
 mergeResults parsed =
     let
-        ( Pages.Internal.Form.Validation _ name ( parsedThing, combineErrors ), individualFieldErrors ) =
+        ( Pages.Internal.Form.Validation _ name ( parsedThing, combineErrors ) handlers, individualFieldErrors ) =
             parsed.result
     in
     Pages.Internal.Form.Validation Nothing
@@ -323,10 +322,11 @@ mergeResults parsed =
         ( parsedThing
         , mergeErrors combineErrors individualFieldErrors
         )
+        handlers
 
 
 unwrapValidation : Validation error parsed named constraints -> ( Maybe parsed, Dict String (List error) )
-unwrapValidation (Pages.Internal.Form.Validation _ _ ( maybeParsed, errors )) =
+unwrapValidation (Pages.Internal.Form.Validation _ _ ( maybeParsed, errors ) _) =
     ( maybeParsed, errors )
 
 

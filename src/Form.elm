@@ -12,7 +12,7 @@ module Form exposing
     , parse
     , Validated(..)
     , hiddenField, hiddenKind
-    , dynamic, dynamicWithOptions
+    , dynamic
     , Msg, init, update
     , Model, FormState, FieldState
     , ServerResponse
@@ -213,7 +213,7 @@ through hidden fields.
 
 ## Dynamic Fields
 
-@docs dynamic, dynamicWithOptions
+@docs dynamic
 
 
 ## Wiring
@@ -357,7 +357,6 @@ form combineAndView =
             }
         )
         (\_ -> [])
-        Dict.empty
 
 
 {-| Allows you to render a Form that renders a sub-form based on the `decider` value.
@@ -477,69 +476,7 @@ dynamic :
             combineAndView
             parsed
             input
-dynamic forms =
-    dynamicWithOptions { forms = forms, options = [] }
-
-
-{-| Like [`dynamic`](#dynamic), but also collects `formatOnEvent` handlers from sub-forms.
-
-If your sub-form fields use [`Field.formatOnEvent`](Form-Field#formatOnEvent), you need to provide the
-list of all possible decider values so that their event handlers can be registered.
-
-    |> Form.dynamicWithOptions
-        { forms =
-            \parsedKind ->
-                case parsedKind of
-                    Link -> linkForm
-                    Post -> postForm
-        , options = [ Link, Post ]
-        }
-
-If none of your sub-form fields use `formatOnEvent`, use [`dynamic`](#dynamic) instead.
-
--}
-dynamicWithOptions :
-    { forms :
-        decider
-        ->
-            Form
-                error
-                { combine : Validation error parsed named constraints1
-                , view : subView
-                }
-                parsed
-                input
-    , options : List decider
-    }
-    ->
-        Form
-            error
-            ({ combine : decider -> Validation error parsed named constraints1
-             , view : decider -> subView
-             }
-             -> combineAndView
-            )
-            parsed
-            input
-    ->
-        Form
-            error
-            combineAndView
-            parsed
-            input
-dynamicWithOptions { forms, options } (Internal.Form.Form _ parseFn _ parentEventHandlers) =
-    let
-        allSubFormEventHandlers : Dict String (Internal.Field.EventInfo -> Maybe String)
-        allSubFormEventHandlers =
-            options
-                |> List.foldl
-                    (\decider acc ->
-                        case forms decider of
-                            Internal.Form.Form _ _ _ subHandlers ->
-                                Dict.union subHandlers acc
-                    )
-                    Dict.empty
-    in
+dynamic forms (Internal.Form.Form _ parseFn _) =
     Internal.Form.Form
         []
         (\maybeData formState ->
@@ -553,7 +490,7 @@ dynamicWithOptions { forms, options } (Internal.Form.Form _ parseFn _ parentEven
                         }
                 toParser decider =
                     case forms decider of
-                        Internal.Form.Form _ parseFn2 _ _ ->
+                        Internal.Form.Form _ parseFn2 _ ->
                             -- TODO need to include hidden form fields from `definitions` (should they be automatically rendered? Does that mean the view type needs to be hardcoded?)
                             parseFn2 maybeData formState
 
@@ -584,7 +521,7 @@ dynamicWithOptions { forms, options } (Internal.Form.Form _ parseFn _ parentEven
                                         |> toParser
                                         |> .combineAndView
                                         |> .combine
-                                        |> (\(Validation a b ( maybeParsed, errors )) ->
+                                        |> (\(Validation a b ( maybeParsed, errors ) handlers) ->
                                                 Validation a
                                                     b
                                                     ( maybeParsed
@@ -602,6 +539,7 @@ dynamicWithOptions { forms, options } (Internal.Form.Form _ parseFn _ parentEven
                                                         (toResult2 decider)
                                                         Dict.empty
                                                     )
+                                                    handlers
                                            )
                             , view =
                                 \decider ->
@@ -619,7 +557,6 @@ dynamicWithOptions { forms, options } (Internal.Form.Form _ parseFn _ parentEven
             myFn
         )
         (\_ -> [])
-        (Dict.union allSubFormEventHandlers parentEventHandlers)
 
 
 
@@ -714,7 +651,7 @@ field :
     -> Field error parsed input initial kind constraints
     -> Form error (Form.Validation.Field error parsed kind -> combineAndView) parsedCombined input
     -> Form error combineAndView parsedCombined input
-field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitions parseFn toInitialValues eventHandlers) =
+field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitions parseFn toInitialValues) =
     Internal.Form.Form
         (( name, Internal.Form.RegularField )
             :: definitions
@@ -730,7 +667,6 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
                             ( maybeData |> Maybe.andThen (\data -> fieldParser.initialValue data), Form.FieldStatus.notVisited )
 
                 ( maybeParsed, errors ) =
-                    -- @@@@@@ use code from here
                     fieldParser.decode rawFieldValue
 
                 thing : Pages.Internal.Form.ViewField kind
@@ -740,9 +676,18 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
                     , kind = ( kind, fieldParser.properties )
                     }
 
+                eventHandlerDict : Dict String Pages.Internal.Form.EventHandler
+                eventHandlerDict =
+                    case fieldParser.formatOnEvent of
+                        Just handler ->
+                            Dict.singleton name handler
+
+                        Nothing ->
+                            Dict.empty
+
                 parsedField : Form.Validation.Field error parsed kind
                 parsedField =
-                    Pages.Internal.Form.Validation (Just thing) (Just name) ( maybeParsed, Dict.empty )
+                    Pages.Internal.Form.Validation (Just thing) (Just name) ( maybeParsed, Dict.empty ) eventHandlerDict
 
                 myFn :
                     { result : Dict String (List error)
@@ -755,16 +700,11 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
                         , isMatchCandidate : Bool
                         }
                 myFn soFar =
-                    let
-                        validationField : Form.Validation.Field error parsed kind
-                        validationField =
-                            parsedField
-                    in
                     { result =
                         soFar.result
                             |> addErrorsInternal name errors
                     , combineAndView =
-                        soFar.combineAndView validationField
+                        soFar.combineAndView parsedField
                     , isMatchCandidate = soFar.isMatchCandidate
                     }
             in
@@ -780,13 +720,6 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
 
                 Nothing ->
                     toInitialValues input
-        )
-        (case fieldParser.formatOnEvent of
-            Just handler ->
-                Dict.insert name handler eventHandlers
-
-            Nothing ->
-                eventHandlers
         )
 
 
@@ -819,7 +752,7 @@ hiddenField :
     -> Field error parsed input initial kind constraints
     -> Form error (Form.Validation.Field error parsed Form.FieldView.Hidden -> combineAndView) parsedCombined input
     -> Form error combineAndView parsedCombined input
-hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form definitions parseFn toInitialValues eventHandlers) =
+hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form definitions parseFn toInitialValues) =
     Internal.Form.Form
         (( name, Internal.Form.HiddenField )
             :: definitions
@@ -844,9 +777,18 @@ hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form defini
                     , kind = ( Internal.Input.Hidden, fieldParser.properties )
                     }
 
+                eventHandlerDict : Dict String Pages.Internal.Form.EventHandler
+                eventHandlerDict =
+                    case fieldParser.formatOnEvent of
+                        Just handler ->
+                            Dict.singleton name handler
+
+                        Nothing ->
+                            Dict.empty
+
                 parsedField : Form.Validation.Field error parsed Form.FieldView.Hidden
                 parsedField =
-                    Pages.Internal.Form.Validation (Just thing) (Just name) ( maybeParsed, Dict.empty )
+                    Pages.Internal.Form.Validation (Just thing) (Just name) ( maybeParsed, Dict.empty ) eventHandlerDict
 
                 myFn :
                     { result : Dict String (List error)
@@ -859,16 +801,11 @@ hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form defini
                         , isMatchCandidate : Bool
                         }
                 myFn soFar =
-                    let
-                        validationField : Form.Validation.Field error parsed Form.FieldView.Hidden
-                        validationField =
-                            parsedField
-                    in
                     { result =
                         soFar.result
                             |> addErrorsInternal name errors
                     , combineAndView =
-                        soFar.combineAndView validationField
+                        soFar.combineAndView parsedField
                     , isMatchCandidate = soFar.isMatchCandidate
                     }
             in
@@ -884,13 +821,6 @@ hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form defini
 
                 Nothing ->
                     toInitialValues input
-        )
-        (case fieldParser.formatOnEvent of
-            Just handler ->
-                Dict.insert name handler eventHandlers
-
-            Nothing ->
-                eventHandlers
         )
 
 
@@ -918,7 +848,7 @@ hiddenKind :
     -> error
     -> Form error combineAndView parsed input
     -> Form error combineAndView parsed input
-hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInitialValues eventHandlers) =
+hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInitialValues) =
     let
         (Internal.Field.Field fieldParser _) =
             Field.exactValue value error_
@@ -966,13 +896,6 @@ hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInit
         (\input ->
             ( name, Just value )
                 :: toInitialValues input
-        )
-        (case fieldParser.formatOnEvent of
-            Just handler ->
-                Dict.insert name handler eventHandlers
-
-            Nothing ->
-                eventHandlers
         )
 
 
@@ -1028,7 +951,7 @@ mergeResults :
     -> Validation error parsed unnamed constraints2
 mergeResults parsed =
     let
-        ( Pages.Internal.Form.Validation _ name ( parsedThing, combineErrors ), individualFieldErrors ) =
+        ( Pages.Internal.Form.Validation _ name ( parsedThing, combineErrors ) handlers, individualFieldErrors ) =
             parsed.result
     in
     Pages.Internal.Form.Validation Nothing
@@ -1036,6 +959,7 @@ mergeResults parsed =
         ( parsedThing
         , mergeErrors combineErrors individualFieldErrors
         )
+        handlers
 
 
 mergeErrors : Dict comparable (List value) -> Dict comparable (List value) -> Dict comparable (List value)
@@ -1064,7 +988,7 @@ parse :
     -> input
     -> Form error { info | combine : Validation error parsed named constraints } parsed input
     -> Validated error parsed
-parse formId state input (Internal.Form.Form _ parser _ _) =
+parse formId state input (Internal.Form.Form _ parser _) =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
@@ -1125,7 +1049,7 @@ insertIfNonempty key values dict =
 
 
 unwrapValidation : Validation error parsed named constraints -> ( Maybe parsed, Dict String (List error) )
-unwrapValidation (Pages.Internal.Form.Validation _ _ ( maybeParsed, errors )) =
+unwrapValidation (Pages.Internal.Form.Validation _ _ ( maybeParsed, errors ) _) =
     ( maybeParsed, errors )
 
 
@@ -1232,11 +1156,11 @@ renderHelper :
             parsed
             input
     -> Html mappedMsg
-renderHelper formState options_ attrs ((Internal.Form.Form _ _ _ eventHandlers) as form_) =
+renderHelper formState options_ attrs form_ =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
-        { hiddenInputs, children, parsed, fields, errors } =
+        { hiddenInputs, children, parsed, fields, errors, eventHandlers } =
             helperValues options_ toHiddenInput formState form_
 
         toHiddenInput : List (Html.Attribute mappedMsg) -> Html mappedMsg
@@ -1309,11 +1233,11 @@ renderStyledHelper :
             parsed
             input
     -> Html.Styled.Html mappedMsg
-renderStyledHelper formState options_ attrs ((Internal.Form.Form _ _ _ eventHandlers) as form_) =
+renderStyledHelper formState options_ attrs form_ =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
-        { hiddenInputs, children, parsed, fields, errors } =
+        { hiddenInputs, children, parsed, fields, errors, eventHandlers } =
             helperValues options_ toHiddenInput formState form_
 
         toHiddenInput : List (Html.Attribute msg) -> Html.Styled.Html msg
@@ -1388,8 +1312,8 @@ helperValues :
             }
             parsed
             input
-    -> { hiddenInputs : List view, children : List view, isValid : Bool, parsed : Maybe parsed, fields : List ( String, String ), errors : Dict String (List error) }
-helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitions parser toInitialValues _) =
+    -> { hiddenInputs : List view, children : List view, isValid : Bool, parsed : Maybe parsed, fields : List ( String, String ), errors : Dict String (List error), eventHandlers : Dict String Pages.Internal.Form.EventHandler }
+helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitions parser toInitialValues) =
     let
         initialValues : Dict String FieldState
         initialValues =
@@ -1541,7 +1465,7 @@ helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitio
         isValid : Bool
         isValid =
             case withoutServerErrors of
-                Validation _ _ ( Just _, errors ) ->
+                Validation _ _ ( Just _, errors ) _ ->
                     Dict.isEmpty errors
 
                 _ ->
@@ -1549,8 +1473,14 @@ helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitio
 
         ( maybeParsed, errorsDict ) =
             case withoutServerErrors of
-                Validation _ _ ( parsedValue, errors ) ->
+                Validation _ _ ( parsedValue, errors ) _ ->
                     ( parsedValue, errors )
+
+        eventHandlers : Dict String Pages.Internal.Form.EventHandler
+        eventHandlers =
+            case parsed1.combineAndView.combine of
+                Validation _ _ _ handlers ->
+                    handlers
     in
     { hiddenInputs = hiddenInputs
     , children = children
@@ -1558,6 +1488,7 @@ helperValues options_ toHiddenInput formState (Internal.Form.Form fieldDefinitio
     , parsed = maybeParsed
     , fields = rawFields
     , errors = errorsDict
+    , eventHandlers = eventHandlers
     }
 
 
