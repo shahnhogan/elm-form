@@ -1191,6 +1191,431 @@ all =
                                 )
                             )
             ]
+        , describe "formatOnEvent with Form.parse"
+            [ test "Form.parse with formatOnEvent field" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithFormat =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+
+                        model : Form.Model
+                        model =
+                            Dict.singleton "test-form"
+                                { fields =
+                                    Dict.singleton "name"
+                                        { value = "Alice"
+                                        , status = Validation.NotVisited
+                                        }
+                                , submitAttempted = False
+                                }
+                    in
+                    Form.parse "test-form" model () formWithFormat
+                        |> Expect.equal (Valid "Alice")
+            , test "Form.parse with formatOnEvent and validation error" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithFormat =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+
+                        model : Form.Model
+                        model =
+                            Dict.singleton "test-form"
+                                { fields =
+                                    Dict.singleton "name"
+                                        { value = ""
+                                        , status = Validation.Blurred
+                                        }
+                                , submitAttempted = False
+                                }
+                    in
+                    Form.parse "test-form" model () formWithFormat
+                        |> Expect.equal
+                            (Invalid Nothing
+                                (Dict.fromList [ ( "name", [ "Required" ] ) ])
+                            )
+            , test "Form.parse dynamic sub-form with formatOnEvent" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        linkFormWithFormat : DoneForm String PostAction input MyView
+                        linkFormWithFormat =
+                            Form.form
+                                (\url ->
+                                    { combine =
+                                        Validation.succeed ParsedLink
+                                            |> Validation.andMap url
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "url"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.url
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+
+                        postFormWithFormat : DoneForm String PostAction input MyView
+                        postFormWithFormat =
+                            Form.form
+                                (\title body ->
+                                    { combine =
+                                        Validation.succeed
+                                            (\t b -> { title = t, body = b })
+                                            |> Validation.andMap title
+                                            |> Validation.andMap body
+                                            |> Validation.map ParsedPost
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "title"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.field "body" Field.text
+
+                        dynamicForm =
+                            Form.form
+                                (\kind postForm_ ->
+                                    { combine =
+                                        kind
+                                            |> Validation.andThen postForm_.combine
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "kind"
+                                    (Field.select
+                                        [ ( "link", Link )
+                                        , ( "post", Post )
+                                        ]
+                                        (\_ -> "Invalid")
+                                        |> Field.required "Required"
+                                    )
+                                |> Form.dynamic
+                                    (\parsedKind ->
+                                        case parsedKind of
+                                            Link ->
+                                                linkFormWithFormat
+
+                                            Post ->
+                                                postFormWithFormat
+                                    )
+
+                        model : Form.Model
+                        model =
+                            Dict.singleton "test-form"
+                                { fields =
+                                    Dict.fromList
+                                        [ ( "kind", { value = "post", status = Validation.NotVisited } )
+                                        , ( "title", { value = "Hello", status = Validation.Changed } )
+                                        , ( "body", { value = "World", status = Validation.NotVisited } )
+                                        ]
+                                , submitAttempted = False
+                                }
+                    in
+                    Form.parse "test-form" model () dynamicForm
+                        |> Expect.equal
+                            (Valid
+                                (ParsedPost
+                                    { title = "Hello"
+                                    , body = Just "World"
+                                    }
+                                )
+                            )
+            ]
+        , describe "formatOnEvent with hiddenField"
+            [ test "hiddenField with formatOnEvent parses correctly" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithHiddenFormat =
+                            Form.form
+                                (\visible hidden ->
+                                    { combine =
+                                        Validation.succeed Tuple.pair
+                                            |> Validation.andMap visible
+                                            |> Validation.andMap hidden
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "visible"
+                                    (Field.text |> Field.required "Required")
+                                |> Form.hiddenField "hidden"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "visible", "hello" )
+                            , ( "hidden", "secret" )
+                            ]
+                        )
+                        (formWithHiddenFormat |> Form.Handler.init identity)
+                        |> Expect.equal (Valid ( "hello", "secret" ))
+            , test "hiddenField with formatOnEvent produces errors" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithHiddenFormat =
+                            Form.form
+                                (\visible hidden ->
+                                    { combine =
+                                        Validation.succeed Tuple.pair
+                                            |> Validation.andMap visible
+                                            |> Validation.andMap hidden
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "visible"
+                                    (Field.text |> Field.required "Required")
+                                |> Form.hiddenField "hidden"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "visible", "hello" ) ]
+                        )
+                        (formWithHiddenFormat |> Form.Handler.init identity)
+                        |> Expect.equal
+                            (Invalid Nothing
+                                (Dict.fromList [ ( "hidden", [ "Required" ] ) ])
+                            )
+            ]
+        , describe "formatOnEvent with other field modifiers"
+            [ test "formatOnEvent with withMinLength" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithModifiers =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.withMinLength 3 "Too short"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields [ ( "name", "ab" ) ])
+                        (formWithModifiers |> Form.Handler.init identity)
+                        |> Expect.equal
+                            (Invalid (Just "ab")
+                                (Dict.fromList [ ( "name", [ "Too short" ] ) ])
+                            )
+            , test "formatOnEvent with withMinLength passes when valid" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithModifiers =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> Div
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.withMinLength 3 "Too short"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                    in
+                    Form.Handler.run
+                        (fields [ ( "name", "Alice" ) ])
+                        (formWithModifiers |> Form.Handler.init identity)
+                        |> Expect.equal (Valid "Alice")
+            ]
+        , describe "formatOnEvent with Form.Handler (mixed forms)"
+            [ test "handler with mix of formatOnEvent and non-formatOnEvent forms" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formWithFormat : Form.HtmlForm String String () msg
+                        formWithFormat =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> []
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.hiddenKind ( "kind", "with-format" ) "Expected kind"
+
+                        formWithoutFormat : Form.HtmlForm String String () msg
+                        formWithoutFormat =
+                            Form.form
+                                (\email ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap email
+                                    , view = \_ -> []
+                                    }
+                                )
+                                |> Form.field "email"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                    )
+                                |> Form.hiddenKind ( "kind", "without-format" ) "Expected kind"
+
+                        handler =
+                            Form.Handler.init identity formWithFormat
+                                |> Form.Handler.with identity formWithoutFormat
+                    in
+                    [ Form.Handler.run
+                        (fields
+                            [ ( "kind", "with-format" )
+                            , ( "name", "Alice" )
+                            ]
+                        )
+                        handler
+                        |> Expect.equal (Valid "Alice")
+                    , Form.Handler.run
+                        (fields
+                            [ ( "kind", "without-format" )
+                            , ( "email", "alice@example.com" )
+                            ]
+                        )
+                        handler
+                        |> Expect.equal (Valid "alice@example.com")
+                    ]
+                        |> (\expectations ->
+                                case expectations of
+                                    [ a, b ] ->
+                                        Expect.all
+                                            [ \() -> a
+                                            , \() -> b
+                                            ]
+                                            ()
+
+                                    _ ->
+                                        Expect.fail "unreachable"
+                           )
+            ]
+        , describe "formatOnEvent with hiddenKind"
+            [ test "hiddenKind form with formatOnEvent fields parses via Handler" <|
+                \() ->
+                    let
+                        noOpFormatter : Field.EventInfo -> Maybe String
+                        noOpFormatter _ =
+                            Nothing
+
+                        formA : Form.HtmlForm String String () msg
+                        formA =
+                            Form.form
+                                (\name ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap name
+                                    , view = \_ -> []
+                                    }
+                                )
+                                |> Form.field "name"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.hiddenKind ( "kind", "form-a" ) "Expected kind"
+
+                        formB : Form.HtmlForm String String () msg
+                        formB =
+                            Form.form
+                                (\email ->
+                                    { combine =
+                                        Validation.succeed identity
+                                            |> Validation.andMap email
+                                    , view = \_ -> []
+                                    }
+                                )
+                                |> Form.field "email"
+                                    (Field.text
+                                        |> Field.required "Required"
+                                        |> Field.formatOnEvent noOpFormatter
+                                    )
+                                |> Form.hiddenKind ( "kind", "form-b" ) "Expected kind"
+
+                        handler =
+                            Form.Handler.init identity formA
+                                |> Form.Handler.with identity formB
+                    in
+                    Form.Handler.run
+                        (fields
+                            [ ( "kind", "form-b" )
+                            , ( "email", "test@example.com" )
+                            ]
+                        )
+                        handler
+                        |> Expect.equal (Valid "test@example.com")
+            ]
         ]
 
 
