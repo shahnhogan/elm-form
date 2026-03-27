@@ -17,6 +17,7 @@ module Form exposing
     , Model, FormState, FieldState
     , ServerResponse
     , mapMsg, toResult
+    , updateWithMsg
     -- subGroup
     )
 
@@ -230,6 +231,14 @@ in the user's workflow to show validation errors.
 @docs ServerResponse
 
 @docs mapMsg, toResult
+
+
+## Internal
+
+These functions are intended for framework authors (e.g. elm-pages) rather than
+typical application use.
+
+@docs updateWithMsg
 
 -}
 
@@ -1753,24 +1762,44 @@ init =
 -}
 update : Msg msg -> Model -> ( Model, Cmd msg )
 update formMsg formModel =
+    let
+        ( newModel, maybeMsg ) =
+            updateWithMsg formMsg formModel
+    in
+    ( newModel
+    , maybeMsg
+        |> Maybe.map (\msg -> Task.succeed msg |> Task.perform identity)
+        |> Maybe.withDefault Cmd.none
+    )
+
+
+{-| Like [`update`](#update), but returns the message to dispatch directly
+instead of wrapping it in a `Cmd`. This is useful for frameworks that handle
+message dispatch themselves (like elm-pages) and for testing, where `Cmd` is
+opaque and can't be inspected.
+
+    case Form.updateWithMsg formMsg formModel of
+        ( newModel, Just msg ) ->
+            -- dispatch msg through your own update loop
+
+        ( newModel, Nothing ) ->
+            -- no message to dispatch, just a model update
+
+-}
+updateWithMsg : Msg msg -> Model -> ( Model, Maybe msg )
+updateWithMsg formMsg formModel =
     case formMsg of
         Internal.FieldEvent.UserMsg myMsg ->
-            ( formModel
-            , Task.succeed myMsg |> Task.perform identity
-            )
+            ( formModel, Just myMsg )
 
         Internal.FieldEvent.FormFieldEvent value ->
-            ( updateInternal value formModel
-            , Cmd.none
-            )
+            ( updateInternal value formModel, Nothing )
 
         Internal.FieldEvent.Submit formData maybeMsg ->
             ( setSubmitAttempted
                 (formData.id |> Maybe.withDefault "form")
                 formModel
             , maybeMsg
-                |> Maybe.map (\userMsg -> Task.succeed userMsg |> Task.perform identity)
-                |> Maybe.withDefault Cmd.none
             )
 
 
