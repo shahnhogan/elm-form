@@ -19,7 +19,7 @@ type Form error combineAndView parsed input
             }
         )
         (input -> List ( String, Maybe String ))
-        (FormState -> String -> EventInfo -> Maybe String)
+        (Dict String (EventInfo -> Maybe String))
 
 
 {-| -}

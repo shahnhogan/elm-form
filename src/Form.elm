@@ -244,7 +244,6 @@ typical application use.
 
 import Dict exposing (Dict)
 import Form.Field as Field exposing (Field)
-import Form.Field.Selection as Selection
 import Form.FieldStatus
 import Form.FieldView
 import Form.Validation
@@ -358,18 +357,13 @@ form combineAndView =
             }
         )
         (\_ -> [])
-        (\_ _ _ -> Nothing)
+        Dict.empty
 
 
 {-| Allows you to render a Form that renders a sub-form based on the `decider` value.
 
 For example, here is a `Form` that shows a dropdown to select between a `Post` and a `Link`, and then
 renders the `linkForm` or `postForm` based on the dropdown selection.
-
-**Note:** Dynamic forms now support `formatOnEvent` in sub-form fields! You need to provide
-a `deciderFieldName` (the name of the field that determines which sub-form to show) and a
-`deciderFromString` function that can parse the string field value back to your decider type.
-This allows the form to properly route events to the correct sub-form.
 
     import Form.Handler
     import Form.Validation as Validation
@@ -408,22 +402,8 @@ This allows the form to properly route events to the correct sub-form.
                         case parsedKind of
                             Link -> linkForm
                             Post -> postForm
-                , deciderFieldName = "kind"
-                , deciderFromString = postKindFromString  -- Helper function!
+                , options = [ Link, Post ]
                 }
-
-    -- Enumeration helpers (you can generate these automatically):
-
-    postKindFromString : String -> Maybe PostKind
-    postKindFromString str =
-        case str of
-            "link" -> Just Link
-            "post" -> Just Post
-            _ -> Nothing
-
-    postKindOptions : List ( String, PostKind )
-    postKindOptions =
-        [ ( "link", Link ), ( "post", Post ) ]
 
     linkForm : Form.HtmlForm String PostAction input msg
     linkForm =
@@ -483,13 +463,11 @@ dynamic :
                 }
                 parsed
                 input
-    , deciderFieldName : String
-    , deciderFromString : String -> Maybe decider
+    , options : List decider
     }
     ->
         Form
             error
-            --((decider -> Validation error parsed named) -> combined)
             ({ combine : decider -> Validation error parsed named constraints1
              , view : decider -> subView
              }
@@ -503,7 +481,19 @@ dynamic :
             combineAndView
             parsed
             input
-dynamic { forms, deciderFieldName, deciderFromString } (Internal.Form.Form _ parseFn _ _) =
+dynamic { forms, options } (Internal.Form.Form _ parseFn _ parentEventHandlers) =
+    let
+        allSubFormEventHandlers : Dict String (Internal.Field.EventInfo -> Maybe String)
+        allSubFormEventHandlers =
+            options
+                |> List.foldl
+                    (\decider acc ->
+                        case forms decider of
+                            Internal.Form.Form _ _ _ subHandlers ->
+                                Dict.union subHandlers acc
+                    )
+                    Dict.empty
+    in
     Internal.Form.Form
         []
         (\maybeData formState ->
@@ -583,27 +573,7 @@ dynamic { forms, deciderFieldName, deciderFromString } (Internal.Form.Form _ par
             myFn
         )
         (\_ -> [])
-        (\pagesFormState fieldName eventInfo ->
-            -- Now we can properly route events to sub-forms!
-            -- First, get the current decider value from the form state
-            case pagesFormState.fields |> Dict.get deciderFieldName of
-                Just deciderField ->
-                    -- Parse the string decider value back to the decider type
-                    case deciderFromString deciderField.value of
-                        Just decider ->
-                            -- We have the decider! Route to the appropriate sub-form
-                            case forms decider of
-                                Internal.Form.Form _ _ _ subFormEventHandler ->
-                                    subFormEventHandler pagesFormState fieldName eventInfo
-
-                        Nothing ->
-                            -- Couldn't parse the decider, can't route
-                            Nothing
-
-                Nothing ->
-                    -- No decider field value, can't route
-                    Nothing
-        )
+        (Dict.union allSubFormEventHandlers parentEventHandlers)
 
 
 
@@ -698,7 +668,7 @@ field :
     -> Field error parsed input initial kind constraints
     -> Form error (Form.Validation.Field error parsed kind -> combineAndView) parsedCombined input
     -> Form error combineAndView parsedCombined input
-field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitions parseFn toInitialValues onEventPrevious) =
+field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitions parseFn toInitialValues eventHandlers) =
     Internal.Form.Form
         (( name, Internal.Form.RegularField )
             :: definitions
@@ -765,17 +735,12 @@ field name (Internal.Field.Field fieldParser kind) (Internal.Form.Form definitio
                 Nothing ->
                     toInitialValues input
         )
-        (\formState fieldName eventInfo ->
-            if fieldName == name then
-                case fieldParser.formatOnEvent of
-                    Just formatter ->
-                        formatter eventInfo
+        (case fieldParser.formatOnEvent of
+            Just handler ->
+                Dict.insert name handler eventHandlers
 
-                    Nothing ->
-                        Nothing
-
-            else
-                onEventPrevious formState fieldName eventInfo
+            Nothing ->
+                eventHandlers
         )
 
 
@@ -808,7 +773,7 @@ hiddenField :
     -> Field error parsed input initial kind constraints
     -> Form error (Form.Validation.Field error parsed Form.FieldView.Hidden -> combineAndView) parsedCombined input
     -> Form error combineAndView parsedCombined input
-hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form definitions parseFn toInitialValues onEventPrevious) =
+hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form definitions parseFn toInitialValues eventHandlers) =
     Internal.Form.Form
         (( name, Internal.Form.HiddenField )
             :: definitions
@@ -874,17 +839,12 @@ hiddenField name (Internal.Field.Field fieldParser _) (Internal.Form.Form defini
                 Nothing ->
                     toInitialValues input
         )
-        (\formState fieldName eventInfo ->
-            if fieldName == name then
-                case fieldParser.formatOnEvent of
-                    Just formatter ->
-                        formatter eventInfo
+        (case fieldParser.formatOnEvent of
+            Just handler ->
+                Dict.insert name handler eventHandlers
 
-                    Nothing ->
-                        Nothing
-
-            else
-                onEventPrevious formState fieldName eventInfo
+            Nothing ->
+                eventHandlers
         )
 
 
@@ -912,7 +872,7 @@ hiddenKind :
     -> error
     -> Form error combineAndView parsed input
     -> Form error combineAndView parsed input
-hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInitialValues onEventPrevious) =
+hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInitialValues eventHandlers) =
     let
         (Internal.Field.Field fieldParser _) =
             Field.exactValue value error_
@@ -961,17 +921,12 @@ hiddenKind ( name, value ) error_ (Internal.Form.Form definitions parseFn toInit
             ( name, Just value )
                 :: toInitialValues input
         )
-        (\formState fieldName eventInfo ->
-            if fieldName == name then
-                case fieldParser.formatOnEvent of
-                    Just formatter ->
-                        formatter eventInfo
+        (case fieldParser.formatOnEvent of
+            Just handler ->
+                Dict.insert name handler eventHandlers
 
-                    Nothing ->
-                        Nothing
-
-            else
-                onEventPrevious formState fieldName eventInfo
+            Nothing ->
+                eventHandlers
         )
 
 
@@ -1231,45 +1186,19 @@ renderHelper :
             parsed
             input
     -> Html mappedMsg
-renderHelper formState options_ attrs ((Internal.Form.Form _ _ _ onEventFn) as form_) =
+renderHelper formState options_ attrs ((Internal.Form.Form _ _ _ eventHandlers) as form_) =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
         { hiddenInputs, children, parsed, fields, errors } =
             helperValues options_ toHiddenInput formState form_
 
-        thisFormState : FormState
-        thisFormState =
-            formState.state
-                |> Dict.get options_.id
-                |> Maybe.withDefault
-                    (options_.serverResponse
-                        |> Maybe.andThen (.persisted >> .fields)
-                        |> Maybe.map
-                            (\fieldsFromServer ->
-                                { fields =
-                                    fieldsFromServer
-                                        |> List.map
-                                            (Tuple.mapSecond
-                                                (\value ->
-                                                    { value = value
-                                                    , status = Form.Validation.NotVisited
-                                                    }
-                                                )
-                                            )
-                                        |> Dict.fromList
-                                , submitAttempted = True
-                                }
-                            )
-                        |> Maybe.withDefault initFormState
-                    )
-
         toHiddenInput : List (Html.Attribute mappedMsg) -> Html mappedMsg
         toHiddenInput hiddenAttrs =
             Html.input hiddenAttrs []
     in
     Html.form
-        ((Form.listeners options_.id (convert thisFormState) onEventFn
+        ((Form.listeners options_.id eventHandlers
             |> List.map (Attr.map (Internal.FieldEvent.FormFieldEvent >> formState.toMsg))
          )
             ++ [ Attr.method (methodToString options_.method)
@@ -1334,45 +1263,19 @@ renderStyledHelper :
             parsed
             input
     -> Html.Styled.Html mappedMsg
-renderStyledHelper formState options_ attrs ((Internal.Form.Form _ _ _ onEventFn) as form_) =
+renderStyledHelper formState options_ attrs ((Internal.Form.Form _ _ _ eventHandlers) as form_) =
     -- TODO Get transition context from `app` so you can check if the current form is being submitted
     -- TODO either as a transition or a fetcher? Should be easy enough to check for the `id` on either of those?
     let
         { hiddenInputs, children, parsed, fields, errors } =
             helperValues options_ toHiddenInput formState form_
 
-        thisFormState : FormState
-        thisFormState =
-            formState.state
-                |> Dict.get options_.id
-                |> Maybe.withDefault
-                    (options_.serverResponse
-                        |> Maybe.andThen (.persisted >> .fields)
-                        |> Maybe.map
-                            (\fieldsFromServer ->
-                                { fields =
-                                    fieldsFromServer
-                                        |> List.map
-                                            (Tuple.mapSecond
-                                                (\value ->
-                                                    { value = value
-                                                    , status = Form.Validation.NotVisited
-                                                    }
-                                                )
-                                            )
-                                        |> Dict.fromList
-                                , submitAttempted = True
-                                }
-                            )
-                        |> Maybe.withDefault initFormState
-                    )
-
         toHiddenInput : List (Html.Attribute msg) -> Html.Styled.Html msg
         toHiddenInput hiddenAttrs =
             Html.Styled.input (hiddenAttrs |> List.map StyledAttr.fromUnstyled) []
     in
     Html.Styled.form
-        ((Form.listeners options_.id (convert thisFormState) onEventFn
+        ((Form.listeners options_.id eventHandlers
             |> List.map (Attr.map (Internal.FieldEvent.FormFieldEvent >> formState.toMsg))
             |> List.map StyledAttr.fromUnstyled
          )

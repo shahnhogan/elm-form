@@ -11,18 +11,18 @@ import Json.Decode as Decode exposing (Decoder)
 
 
 {-| -}
-listeners : String -> FormState -> (FormState -> String -> Internal.Field.EventInfo -> Maybe String) -> List (Attribute FieldEvent)
-listeners formId formState onEventFn =
-    [ Html.Events.on "focusin" (fieldEventDecoder formState onEventFn)
-    , Html.Events.on "focusout" (fieldEventDecoder formState onEventFn)
-    , Html.Events.on "input" (fieldEventDecoder formState onEventFn)
+listeners : String -> Dict String (Internal.Field.EventInfo -> Maybe String) -> List (Attribute FieldEvent)
+listeners formId eventHandlers =
+    [ Html.Events.on "focusin" (fieldEventDecoder eventHandlers)
+    , Html.Events.on "focusout" (fieldEventDecoder eventHandlers)
+    , Html.Events.on "input" (fieldEventDecoder eventHandlers)
     , Attr.id formId
     ]
 
 
 {-| -}
-fieldEventDecoder : FormState -> (FormState -> String -> Internal.Field.EventInfo -> Maybe String) -> Decoder FieldEvent
-fieldEventDecoder formState onEventFn =
+fieldEventDecoder : Dict String (Internal.Field.EventInfo -> Maybe String) -> Decoder FieldEvent
+fieldEventDecoder eventHandlers =
     Decode.map4
         (\value formId name selection ->
             { value = value
@@ -64,7 +64,8 @@ fieldEventDecoder formState onEventFn =
 
                                 newValue : Maybe String
                                 newValue =
-                                    onEventFn formState partial.name eventInfo
+                                    Dict.get partial.name eventHandlers
+                                        |> Maybe.andThen (\handler -> handler eventInfo)
                             in
                             { value =
                                 case newValue of

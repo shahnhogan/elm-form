@@ -24,53 +24,14 @@ type UserAdminFormType
     | AdminForm
 
 
-userAdminFormTypeFromString : String -> Maybe UserAdminFormType
-userAdminFormTypeFromString str =
-    case str of
-        "user" ->
-            Just UserForm
-
-        "admin" ->
-            Just AdminForm
-
-        _ ->
-            Nothing
-
-
 type EmployeeContractorFormType
     = EmployeeForm
     | ContractorForm
 
 
-employeeContractorFormTypeFromString : String -> Maybe EmployeeContractorFormType
-employeeContractorFormTypeFromString str =
-    case str of
-        "employee" ->
-            Just EmployeeForm
-
-        "contractor" ->
-            Just ContractorForm
-
-        _ ->
-            Nothing
-
-
 type EmployeeContractorFormType2
     = EmployeeForm2
     | ContractorForm2
-
-
-employeeContractorFormType2FromString : String -> Maybe EmployeeContractorFormType2
-employeeContractorFormType2FromString str =
-    case str of
-        "employee" ->
-            Just EmployeeForm2
-
-        "contractor" ->
-            Just ContractorForm2
-
-        _ ->
-            Nothing
 
 
 type alias DoneForm error parsed input view =
@@ -336,8 +297,7 @@ all =
                                                 )
                                                 |> Form.field "password" (Field.text |> Field.password |> Field.required "Required")
                                                 |> Form.field "password-confirmation" (Field.text |> Field.password |> Field.required "Required")
-                                    , deciderFieldName = "_subform"
-                                    , deciderFromString = \_ -> Just ()
+                                    , options = [ () ]
                                     }
                                 |> Form.Handler.init identity
                             )
@@ -416,8 +376,7 @@ all =
 
                                         Post ->
                                             postForm
-                            , deciderFieldName = "kind"
-                            , deciderFromString = postKindFromString
+                            , options = [ Link, Post ]
                             }
             in
             [ test "parses link" <|
@@ -614,8 +573,7 @@ all =
 
                                         AdminForm ->
                                             adminForm
-                            , deciderFieldName = "formType"
-                            , deciderFromString = userAdminFormTypeFromString
+                            , options = [ UserForm, AdminForm ]
                             }
             in
             [ describe "Initial form errors AND follow-up form errors in final result" <|
@@ -709,8 +667,7 @@ all =
 
                                             ContractorForm ->
                                                 contractorForm
-                                , deciderFieldName = "formType"
-                                , deciderFromString = employeeContractorFormTypeFromString
+                                , options = [ EmployeeForm, ContractorForm ]
                                 }
                 in
                 [ test "Employee form with validation errors only in follow-up form" <|
@@ -819,8 +776,7 @@ all =
 
                                             ContractorForm2 ->
                                                 contractorForm
-                                , deciderFieldName = "formType"
-                                , deciderFromString = employeeContractorFormType2FromString
+                                , options = [ EmployeeForm2, ContractorForm2 ]
                                 }
                 in
                 [ test "Employee form with all error types" <|
@@ -1163,19 +1119,6 @@ type PostAction
 type PostKind
     = Link
     | Post
-
-
-postKindFromString : String -> Maybe PostKind
-postKindFromString str =
-    case str of
-        "link" ->
-            Just Link
-
-        "post" ->
-            Just Post
-
-        _ ->
-            Nothing
 
 
 type Media

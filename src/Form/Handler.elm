@@ -206,7 +206,7 @@ normalizeServerForm mapFn (Internal.Form.Form _ parseFn _ _) =
             }
         )
         (\_ -> [])
-        (\_ _ _ -> Nothing)
+        Dict.empty
 
 
 {-| Parse your [`Handler`](#Handler) with the given raw form data into a [`Validated`](Form#Validated) value.
