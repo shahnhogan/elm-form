@@ -27,7 +27,7 @@ formWithHiddenField hiddenName =
             , view = \_ -> []
             }
         )
-        |> Form.hiddenField hiddenName (Field.text |> Field.required "Required")
+        |> Form.field hiddenName (Field.text |> Field.required "Required")
         |> Form.field "name" (Field.text |> Field.required "Required")
 
 
@@ -86,7 +86,7 @@ updatedNameValue result =
 
 all : Test
 all =
-    describe "a hidden field named \"id\" shadows form.id via [LegacyOverrideBuiltIns]"
+    describe "a field named \"id\" shadows form.id"
         [ test "control: input event on a form with a non-reserved hidden field name works" <|
             \() ->
                 renderForm "record-id"
@@ -95,7 +95,7 @@ all =
                     |> Event.toResult
                     |> updatedNameValue
                     |> Expect.equal (Just "hello")
-        , test "input event on a form with a hidden field named \"id\" still updates form state" <|
+        , test "input event on a form with a field named \"id\" still updates form state" <|
             \() ->
                 renderForm "id"
                     |> Query.fromHtml
