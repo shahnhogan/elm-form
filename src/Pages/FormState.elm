@@ -15,6 +15,7 @@ listeners formId =
     , Html.Events.on "focusout" fieldEventDecoder
     , Html.Events.on "input" fieldEventDecoder
     , Attr.id formId
+    , Attr.attribute "data-elm-form-id" formId
     ]
 
 
@@ -23,7 +24,7 @@ fieldEventDecoder : Decoder FieldEvent
 fieldEventDecoder =
     Decode.map4 FieldEvent
         inputValueDecoder
-        (Decode.at [ "currentTarget", "id" ] Decode.string)
+        (Decode.at [ "currentTarget", "dataset", "elmFormId" ] Decode.string)
         (Decode.at [ "target", "name" ] Decode.string
             |> Decode.andThen
                 (\name ->

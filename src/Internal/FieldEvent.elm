@@ -53,7 +53,7 @@ formDataOnSubmit =
             fieldsDecoder
             (currentForm "method" methodDecoder)
             (currentForm "action" Decode.string)
-            (currentForm "id" (Decode.nullable Decode.string))
+            formIdDecoder
             |> Decode.map alwaysPreventDefault
         )
 
@@ -84,6 +84,16 @@ currentForm field_ decoder_ =
         [ Decode.at [ "submitter", "form" ] decoder_
         , Decode.at [ "currentTarget", field_ ] decoder_
         ]
+
+
+formIdDecoder : Decoder (Maybe String)
+formIdDecoder =
+    Decode.maybe
+        (Decode.oneOf
+            [ Decode.at [ "submitter", "form", "dataset", "elmFormId" ] Decode.string
+            , Decode.at [ "currentTarget", "dataset", "elmFormId" ] Decode.string
+            ]
+        )
 
 
 methodDecoder : Decoder Method
