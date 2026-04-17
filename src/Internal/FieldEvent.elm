@@ -39,21 +39,20 @@ type Method
     | Post
 
 
-formDataOnSubmit : Html.Attribute FormData
-formDataOnSubmit =
+formDataOnSubmit : String -> Html.Attribute FormData
+formDataOnSubmit formId =
     Html.Events.preventDefaultOn "submit"
-        (Decode.map4
-            (\fields method action id ->
+        (Decode.map3
+            (\fields method action ->
                 { fields = fields
                 , method = method
                 , action = action
-                , id = id
+                , id = Just formId
                 }
             )
             fieldsDecoder
             (currentForm "method" methodDecoder)
             (currentForm "action" Decode.string)
-            formIdDecoder
             |> Decode.map alwaysPreventDefault
         )
 
@@ -84,16 +83,6 @@ currentForm field_ decoder_ =
         [ Decode.at [ "submitter", "form" ] decoder_
         , Decode.at [ "currentTarget", field_ ] decoder_
         ]
-
-
-formIdDecoder : Decoder (Maybe String)
-formIdDecoder =
-    Decode.maybe
-        (Decode.oneOf
-            [ Decode.at [ "submitter", "form", "dataset", "elmFormId" ] Decode.string
-            , Decode.at [ "currentTarget", "dataset", "elmFormId" ] Decode.string
-            ]
-        )
 
 
 methodDecoder : Decoder Method
