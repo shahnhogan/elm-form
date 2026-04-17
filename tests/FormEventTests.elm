@@ -16,24 +16,24 @@ type Msg
     = FormMsg (Form.Msg Msg)
 
 
-formWithHiddenField : String -> Form.HtmlForm String ( String, String ) input Msg
-formWithHiddenField hiddenName =
+formWithField : String -> Form.HtmlForm String ( String, String ) input Msg
+formWithField name =
     Form.form
-        (\hidden name ->
+        (\id_ name_ ->
             { combine =
                 Validation.succeed Tuple.pair
-                    |> Validation.andMap hidden
-                    |> Validation.andMap name
+                    |> Validation.andMap id_
+                    |> Validation.andMap name_
             , view = \_ -> []
             }
         )
-        |> Form.field hiddenName (Field.text |> Field.required "Required")
+        |> Form.field name (Field.text |> Field.required "Required")
         |> Form.field "name" (Field.text |> Field.required "Required")
 
 
 renderForm : String -> Html.Html Msg
-renderForm hiddenName =
-    formWithHiddenField hiddenName
+renderForm name =
+    formWithField name
         |> Form.renderHtml
             { submitting = False
             , state = Form.init
@@ -87,7 +87,7 @@ updatedNameValue result =
 all : Test
 all =
     describe "a field named \"id\" shadows form.id"
-        [ test "control: input event on a form with a non-reserved hidden field name works" <|
+        [ test "control: input event on a form with a non-reserved field name works" <|
             \() ->
                 renderForm "record-id"
                     |> Query.fromHtml
