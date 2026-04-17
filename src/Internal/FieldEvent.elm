@@ -42,17 +42,18 @@ type Method
 formDataOnSubmit : String -> Html.Attribute FormData
 formDataOnSubmit formId =
     Html.Events.preventDefaultOn "submit"
-        (Decode.map3
-            (\fields method action ->
+        (Decode.map4
+            (\fields method action id ->
                 { fields = fields
                 , method = method
                 , action = action
-                , id = Just formId
+                , id = id
                 }
             )
             fieldsDecoder
             (currentForm "method" methodDecoder)
             (currentForm "action" Decode.string)
+            (Decode.succeed (Just formId))
             |> Decode.map alwaysPreventDefault
         )
 

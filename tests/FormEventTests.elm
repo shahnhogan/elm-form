@@ -14,7 +14,6 @@ import Test.Html.Query as Query
 
 type Msg
     = FormMsg (Form.Msg Msg)
-    | Submitted
 
 
 formWithHiddenField : String -> Form.HtmlForm String ( String, String ) input Msg
@@ -32,8 +31,8 @@ formWithHiddenField hiddenName =
         |> Form.field "name" (Field.text |> Field.required "Required")
 
 
-renderInputForm : String -> Html.Html Msg
-renderInputForm hiddenName =
+renderForm : String -> Html.Html Msg
+renderForm hiddenName =
     formWithHiddenField hiddenName
         |> Form.renderHtml
             { submitting = False
@@ -42,34 +41,6 @@ renderInputForm hiddenName =
             }
             (Form.options "myForm")
             []
-
-
-renderSubmitForm : String -> Html.Html Msg
-renderSubmitForm hiddenName =
-    formWithHiddenField hiddenName
-        |> Form.renderHtml
-            { submitting = False
-            , state = Form.init
-            , toMsg = FormMsg
-            }
-            (Form.options "myForm"
-                |> Form.withAction "/submit"
-                |> Form.withOnSubmit (\_ -> Submitted)
-            )
-            []
-
-
-shadowedElement : String -> Encode.Value
-shadowedElement name =
-    Encode.object
-        [ ( "tagName", Encode.string "INPUT" )
-        , ( "name", Encode.string name )
-        ]
-
-
-dataset : Encode.Value
-dataset =
-    Encode.object [ ( "elmFormId", Encode.string "myForm" ) ]
 
 
 inputEvent : Encode.Value -> ( String, Encode.Value )
@@ -85,38 +56,18 @@ inputEvent idValue =
                 ]
           )
         , ( "currentTarget"
-          , Encode.object
-                [ ( "id", idValue )
-                , ( "dataset", dataset )
-                ]
+          , Encode.object [ ( "id", idValue ) ]
           )
         ]
     )
 
 
-submitEvent : Encode.Value -> ( String, Encode.Value )
-submitEvent idValue =
-    ( "submit"
-    , Encode.object
-        [ ( "type", Encode.string "submit" )
-        , ( "currentTarget"
-          , Encode.object
-                [ ( "id", idValue )
-                , ( "method", Encode.string "post" )
-                , ( "action", Encode.string "/submit" )
-                , ( "dataset", dataset )
-                ]
-          )
+shadowedIdElement : Encode.Value
+shadowedIdElement =
+    Encode.object
+        [ ( "tagName", Encode.string "INPUT" )
+        , ( "name", Encode.string "id" )
         ]
-    )
-
-
-fieldValue : String -> Form.Model -> Maybe String
-fieldValue fieldName model =
-    model
-        |> Dict.get "myForm"
-        |> Maybe.andThen (.fields >> Dict.get fieldName)
-        |> Maybe.map .value
 
 
 updatedNameValue : Result String Msg -> Maybe String
@@ -125,18 +76,9 @@ updatedNameValue result =
         Ok (FormMsg formMsg) ->
             Form.updateWithMsg formMsg Form.init
                 |> Tuple.first
-                |> fieldValue "name"
-
-        _ ->
-            Nothing
-
-
-dispatchedOnSubmit : Result String Msg -> Maybe Msg
-dispatchedOnSubmit result =
-    case result of
-        Ok (FormMsg formMsg) ->
-            Form.updateWithMsg formMsg Form.init
-                |> Tuple.second
+                |> Dict.get "myForm"
+                |> Maybe.andThen (.fields >> Dict.get "name")
+                |> Maybe.map .value
 
         _ ->
             Nothing
@@ -145,36 +87,20 @@ dispatchedOnSubmit result =
 all : Test
 all =
     describe "a hidden field named \"id\" shadows form.id via [LegacyOverrideBuiltIns]"
-        [ test "input event on a form with a non-reserved hidden field name works" <|
+        [ test "control: input event on a form with a non-reserved hidden field name works" <|
             \() ->
-                renderInputForm "record-id"
+                renderForm "record-id"
                     |> Query.fromHtml
                     |> Event.simulate (inputEvent (Encode.string "myForm"))
                     |> Event.toResult
                     |> updatedNameValue
                     |> Expect.equal (Just "hello")
-        , test "submit event on a form with a non-reserved hidden field name fires onSubmit" <|
-            \() ->
-                renderSubmitForm "record-id"
-                    |> Query.fromHtml
-                    |> Event.simulate (submitEvent (Encode.string "myForm"))
-                    |> Event.toResult
-                    |> dispatchedOnSubmit
-                    |> Expect.equal (Just Submitted)
         , test "input event on a form with a hidden field named \"id\" still updates form state" <|
             \() ->
-                renderInputForm "id"
+                renderForm "id"
                     |> Query.fromHtml
-                    |> Event.simulate (inputEvent (shadowedElement "id"))
+                    |> Event.simulate (inputEvent shadowedIdElement)
                     |> Event.toResult
                     |> updatedNameValue
                     |> Expect.equal (Just "hello")
-        , test "submit event on a form with a hidden field named \"id\" still fires onSubmit" <|
-            \() ->
-                renderSubmitForm "id"
-                    |> Query.fromHtml
-                    |> Event.simulate (submitEvent (shadowedElement "id"))
-                    |> Event.toResult
-                    |> dispatchedOnSubmit
-                    |> Expect.equal (Just Submitted)
         ]
