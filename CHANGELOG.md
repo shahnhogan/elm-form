@@ -10,6 +10,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-03-26
+
+### Added
+
+- `Form.updateWithMsg` - like `Form.update`, but returns `( Model, Maybe msg )` instead of `( Model, Cmd msg )`. Useful for frameworks that handle message dispatch themselves and for testing where `Cmd` is opaque.
+
 ## [3.0.1] - 2024-08-26
 
 - Fix crash in case where status is compared for global field, fixes [#16](https://github.com/dillonkearns/elm-form/issues/16).
