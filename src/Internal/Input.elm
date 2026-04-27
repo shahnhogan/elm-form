@@ -11,6 +11,7 @@ type InputType
     = Text
     | Number
       -- TODO should range have arguments for initial, min, and max?
+    | Numeric
     | Range
       -- TODO should submit be a special type, or an Input type?
       -- TODO have an option for a submit with a name/value?
@@ -36,6 +37,9 @@ inputTypeToString inputType =
 
         Number ->
             "number"
+
+        Numeric ->
+            "numeric"
 
         Range ->
             "range"

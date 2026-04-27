@@ -6,11 +6,11 @@ module Form.Field exposing
     , withInitialValue, withOptionalInitialValue
     , exactValue
     , required, validateMap, map
-    , email, password, search, telephone, url, textarea
+    , EventInfo(..), Selection(..), formatOnEvent
+    , email, numeric, password, search, telephone, url, textarea
     , range, withMin, withMax
     , withMinLength, withMaxLength
     , withStep
-    , EventInfo(..), Selection(..), formatOnEvent
     , No, Yes
     )
 
@@ -56,7 +56,7 @@ module Form.Field exposing
 
 ## Text Field Display Options
 
-@docs email, password, search, telephone, url, textarea
+@docs email, numeric, password, search, telephone, url, textarea
 
 
 ## Numeric Field Options
@@ -891,6 +891,24 @@ telephone (Internal.Field.Field field _) =
         (Internal.Input.Input Internal.Input.Tel)
 
 
+{-| Modifier for [`text`](#text) Field. This changes the display of the Field to a numeric input (`<input type="numeric">`).
+On mobile devices, this will display a keyboard with a numeric keypad. Devices may or may not show a minus key.
+
+See <https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inputmode#numeric>.
+
+    example =
+        Field.text
+            |> Field.numeric
+
+-}
+numeric :
+    Field error parsed input initial Input { constraints | plainText : () }
+    -> Field error parsed input initial Input constraints
+numeric (Internal.Field.Field field _) =
+    Internal.Field.Field field
+        (Internal.Input.Input Internal.Input.Numeric)
+
+
 {-| Modifier for [`text`](#text) Field. This changes the display of the Field to a search input (`<input type="search">`).
 On mobile devices, this will display a keyboard with a search button.
 
@@ -1410,7 +1428,7 @@ withOptionalInitialValue toInitialValue (Internal.Field.Field field kind) =
 
 {-| Format a field's value based on the event type and cursor/selection state.
 
-This allows you to apply different formatting depending on whether the user is typing (Input), 
+This allows you to apply different formatting depending on whether the user is typing (Input),
 leaving the field (Blur), or entering the field (Focus), and even considering where the cursor
 is positioned within the text.
 
@@ -1449,6 +1467,7 @@ Example - format phone number only when cursor is at the end:
                             Cursor { after } ->
                                 if after == "" then
                                     Just (formatPhoneNumber value)
+
                                 else
                                     Nothing
 
@@ -1467,11 +1486,13 @@ Example - different formatting for different events:
             (\event ->
                 case event of
                     Input { value } ->
-                        Just (String.toUpper value)  -- live uppercase
+                        Just (String.toUpper value)
 
+                    -- live uppercase
                     Blur { value } ->
-                        Just (String.trim value)     -- trim on blur
+                        Just (String.trim value)
 
+                    -- trim on blur
                     _ ->
                         Nothing
             )
